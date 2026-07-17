@@ -1,0 +1,4 @@
+name = "carl";
+string carlIsAwesome = " is awesome";
+
+shout(name, carlIsAwesome);
