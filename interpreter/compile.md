@@ -1,1 +1,1 @@
-g++ -Wall main.c src/*.c -o interpreter
+g++ -Wall -std=c++17 main.cpp src/*.cpp -o bp
