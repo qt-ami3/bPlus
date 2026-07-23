@@ -84,7 +84,7 @@ Changes:
 - ./interpreter/main.c
     Rewrote the interpreter as a single pass; each statement is parsed and executed as soon as its ';' is read, instead of parsing the whole file first. Language features are unchanged from 0.2.1 (shout, break, dynamic and static variables, same error messages). shout and break now live as branches inside the statement loop; only has_extension remains as a separate file in ./interpreter/src/.
 
-## Latest: C++ modular rewrite, new data types (0.3.0)
+## C++ modular rewrite, new data types (0.3.0)
 
 "Another refactor?"
 
@@ -122,3 +122,5 @@ Known issues / Regressions:
     main.cpp decides what a statement does by running string_contains(statement, "=" / "shout" / "break") on the raw statement text as independent ifs, not by parsing an instruction name. A statement can trigger more than one branch: `shout("a = b");` also matches the `=` check and logs `Could not infer type for: b")` to stderr before printing `a = b`.
 - `{` / `}` block-clearing is gone
     0.2.2 treated `{`/`}` as chunk-clearing characters; the new statement reader has no equivalent, and there is no longer an unterminated-statement-at-EOF error.
+
+## Latest: Proper semicolon error checking (0.3.1)

@@ -13,6 +13,7 @@ using namespace std;
 #include "./include/split.h"
 #include "./include/variable.h"
 #include "./include/assign.h"
+#include "./include/trim.h"
 
 void print_usage(const string& program_name) {
   cerr << "Usage:" << endl
@@ -51,28 +52,46 @@ int main(int argc, char* argv[]) {
   }
 
   map<string, Variable> variables;
+  
   int statement_count = 0;
   int semicolon_count = 0;
+  
+  vector<string> errors;
+  bool in_string = false;
+  string line;
+  int line_number = 0;
+  while (getline(file, line)) {
+    line_number++;
 
-  string current;         //  Accumulates text until a ';' ends the statement.
-  bool in_string = false; //  Inside a "..." literal, ';' and braces are ordinary characters.
-  char c;
+    vector<size_t> semicolons;  //  Positions of every ';' outside a string.
+    for (size_t i = 0; i < line.size(); i++) {
+      if (line[i] == '"') in_string = !in_string;
+      else if (line[i] == ';' && !in_string) semicolons.push_back(i);
+    }
 
-  while (file.get(c)) {
-    if (c == '"') in_string = !in_string;
-    if (in_string) {
-      current += c;
-      continue;
-    }
-    if (c != ';') {
-      current += c;
-      continue;
-    }
-    if (c == ';') {
-      semicolon_count++;
-    }
+    const string statement = trim(line);
+    if (statement.empty()) continue;
 
     statement_count++;
+    semicolon_count += semicolons.size();
+
+    if (semicolons.empty()) {
+      errors.push_back("Missing ';' for statement line " + to_string(line_number)
+        + ": " + statement + "*;*");
+      continue;
+    }
+
+    //  A statement ends at its first ';', so any that follow are extra.
+    for (size_t i = 1; i < semicolons.size(); i++) {
+      errors.push_back("Extra ';' for statement line " + to_string(line_number)
+        + ": " + trim(line.substr(0, semicolons[i])) + "*;*"
+        + trim(line.substr(semicolons[i] + 1)));
+    }
+  }
+
+  if (!errors.empty()) {
+    for (const string& error : errors) cerr << error << endl;
+    return 1;
   }
 
   string delimiters = "();";
