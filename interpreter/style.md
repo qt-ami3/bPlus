@@ -6,6 +6,8 @@
 
 One bracket on func init line and then return like; *Can be ignored for 2 line for loop*
 
+Same for if statements.
+
 ```
 #include <iostream>
 
@@ -19,13 +21,12 @@ int main() {
 
   while (true) {
     x++;
-    useless_crap;
-    if (x == 1) {
-      break;
-    }
+    useless_crap();
+
+    if (x == 1) break;
   }
 
-  cout << std::endl;
+  cout << endl;
 
   return 0;
 }

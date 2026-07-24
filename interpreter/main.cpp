@@ -6,14 +6,14 @@ using namespace std;
 #include <fstream>
 #include <sstream>
 #include <iostream>
-#include "./include/has_extension.h"
-#include "./include/read_until.h"
-#include "./include/between.h"
-#include "./include/string_contains.h"
-#include "./include/split.h"
-#include "./include/variable.h"
-#include "./include/assign.h"
 #include "./include/trim.h"
+#include "./include/split.h"
+#include "./include/assign.h"
+#include "./include/between.h"
+#include "./include/variable.h"
+#include "./include/read_until.h"
+#include "./include/has_extension.h"
+#include "./include/string_contains.h"
 
 void print_usage(const string& program_name) {
   cerr << "Usage:" << endl
@@ -58,8 +58,8 @@ int main(int argc, char* argv[]) {
   
   vector<string> errors;
   bool in_string = false;
-  string line;
   int line_number = 0;
+  string line;
   while (getline(file, line)) {
     line_number++;
 
@@ -100,38 +100,32 @@ int main(int argc, char* argv[]) {
     string statement = read_until(filename, ';', 1, i);
     vector<string> tokens = split_multi(statement, delimiters);
 
-    if (string_contains(statement, "=")) {
-      assign_variable(variables, statement);
-    }
+    if (string_contains(statement, "=")) assign_variable(variables, statement);
 
     if (string_contains(statement, "shout") && string_contains(statement, "\"")) {
       cout << between(statement, '"', '"');
     } else if (string_contains(statement, "shout")) {
       string name = between(statement, '(', ')');
       auto it = variables.find(name);
-      if (it != variables.end()) {
-        print_variable(it->second);
-      }
+      
+      if (it != variables.end()) print_variable(it->second);
     }
 
     if (string_contains(statement, "break")) {
       string arg = between(statement, '(', ')');
+
       if (arg.empty()) {
         cout << endl << endl;
       } else try {
         int count = stoi(arg);
-        for (int i = 0; i <= count; i++) {
+        for (int i = 0; i <= count; i++)
           cout << endl;
-        }
       } catch (const invalid_argument &e) {
         auto it = variables.find(arg);
         if (it != variables.end()) {
           auto value = as_integer(it->second);
-          if (value) {
-            for (long long i = 0; i <= *value; i++) {
+          if (value) for (long long i = 0; i <= *value; i++)
               cout << endl;
-            }
-          }
         }
       }
     }
@@ -147,9 +141,8 @@ int main(int argc, char* argv[]) {
   
   if (verbose) {
     cout << "Statements read;" << endl;
-    for (int i = 0; i < semicolon_count; i++) {
+    for (int i = 0; i < semicolon_count; i++)
       cout << read_until(filename, ';', 1, i) << endl;
-    }
 
     cout << "Counted statements: " << statement_count << endl;
     cout << "Semicolons counted: " << semicolon_count;

@@ -123,4 +123,14 @@ Known issues / Regressions:
 - `{` / `}` block-clearing is gone
     0.2.2 treated `{`/`}` as chunk-clearing characters; the new statement reader has no equivalent, and there is no longer an unterminated-statement-at-EOF error.
 
-## Latest: Proper semicolon error checking (0.3.1)
+## Proper semicolon error checking (0.3.1)
+
+## Latest: Updated style.md (0.3.2)
+
+I am very sickly right now so I dont have the energy to make big additions, so intead I am working on slimming down the verbosity of the codebase by updating the style guide.
+
+Changes:
+
+- All applicable if statements are now one-liners.
+
+- All applicable for loops drop the braces.
