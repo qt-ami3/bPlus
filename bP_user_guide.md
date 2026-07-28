@@ -59,3 +59,28 @@ shout(phrase);
 ```
 
 Values must be string literals (`"..."`), integer literals, floating-point literals (containing `.`), or `true`/`false`. When no type is given, the type is inferred from the value: quoted text is `string`, `true`/`false` is `bool`, a literal containing `.` is `float`, otherwise it's parsed as `int` then `long`. A dynamic variable may later be reassigned to a different type; reassigning a static variable to a different type is an error.
+
+Variables can be worked with using standard mathamatical notation:
+  ┌────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+  │                      Case                      │                            Result                            │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ pemdas.bp (target)                             │ 33 — shout(1+2)→3, shout(z)→3, z=x+y ✓                       │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Precedence 2+3*4                               │ 14 ✓                                                         │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Parens in assignment (2+3)*4, nested           │ 20, 12 ✓                                                     │
+  │ 2*(3+(4-1))                                    │                                                              │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Real division 7/2, 6/2                         │ 3.5, 3 ✓                                                     │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Float propagation 1.5+1                        │ 2.5 ✓                                                        │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Divide by zero                                 │ Division by zero → stderr, continues, exit 0 ✓               │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Unknown variable                               │ Unknown variable in expression: a → stderr, continues, exit  │
+  │                                                │ 0 ✓                                                          │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ String with - ("a-b")                          │ not evaluated, prints a-b ✓ (tokenizer rejects the quote)    │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ helloWorld.bp, dataTypes.bp                    │ unchanged ✓                                                  │
+  └────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘

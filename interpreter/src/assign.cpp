@@ -3,6 +3,7 @@
 #include "../include/between.h"
 #include "../include/trim.h"
 #include "../include/parse_literal.h"
+#include "../include/eval_expr.h"
 #include <iostream>
 
 void assign_variable(std::map<std::string, Variable>& variables, const std::string& statement) {
@@ -31,7 +32,8 @@ void assign_variable(std::map<std::string, Variable>& variables, const std::stri
   if (declared_type) {
     auto value = parse_literal_as(rhs, *declared_type);
     if (!value) {
-      std::cerr << "Type error: cannot assign '" << rhs << "' to " << var_type_name(*declared_type) << " " << name << "\n";
+      std::cerr << "Type error: cannot assign '" << rhs << "' to " 
+        << var_type_name(*declared_type) << " " << name << "\n";
       return;
     }
     variables[name] = {*declared_type, true, *value};
@@ -47,6 +49,14 @@ void assign_variable(std::map<std::string, Variable>& variables, const std::stri
       return;
     }
     existing->second.value = *value;
+    return;
+  }
+
+  if (auto expr_value = eval_expr(rhs, variables)) {   // z = x + y;
+    VarType t = std::holds_alternative<double>(*expr_value) ? VarType::Float
+              : std::holds_alternative<long long>(*expr_value) ? VarType::Long
+              : VarType::Int;
+    variables[name] = {t, false, *expr_value};
     return;
   }
 

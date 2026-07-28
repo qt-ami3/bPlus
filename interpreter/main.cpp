@@ -14,6 +14,7 @@ using namespace std;
 #include "./include/read_until.h"
 #include "./include/has_extension.h"
 #include "./include/string_contains.h"
+#include "./include/eval_expr.h"
 
 void print_usage(const string& program_name) {
   cerr << "Usage:" << endl
@@ -105,10 +106,14 @@ int main(int argc, char* argv[]) {
     if (string_contains(statement, "shout") && string_contains(statement, "\"")) {
       cout << between(statement, '"', '"');
     } else if (string_contains(statement, "shout")) {
-      string name = between(statement, '(', ')');
-      auto it = variables.find(name);
-      
-      if (it != variables.end()) print_variable(it->second);
+      string arg = between(statement, '(', ')');
+
+      if (auto value = eval_expr(arg, variables)) {   // shout(1 + 2);
+        print_variable(Variable{VarType::Int, false, *value});
+      } else {                                        // shout(z);
+        auto it = variables.find(arg);
+        if (it != variables.end()) print_variable(it->second);
+      }
     }
 
     if (string_contains(statement, "break")) {

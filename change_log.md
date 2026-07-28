@@ -125,7 +125,7 @@ Known issues / Regressions:
 
 ## Proper semicolon error checking (0.3.1)
 
-## Latest: Updated style.md (0.3.2)
+## Updated style.md (0.3.2)
 
 I am very sickly right now so I dont have the energy to make big additions, so intead I am working on slimming down the verbosity of the codebase by updating the style guide.
 
@@ -134,3 +134,22 @@ Changes:
 - All applicable if statements are now one-liners.
 
 - All applicable for loops drop the braces.
+
+## Latest: Expression evaluation! (0.4.2)
+
+Today I added expression evaluation so you can actually do things with variables now other than print them. I plan on adding logic statements next so you can dynamic programs so, gah whatever.
+
+As far as the future of this project and if it will aim to do anything unique or helpful; I had a dream the other night where b+ could be interpreted to almost-production ready c++ code which I think would be a good legitimate use case for the project so once I get the bones finished thats where I will take the interpreter next.
+
+Added:
+
+include/eval_expr.h
+src/eval_expr.cpp
+
+changes:
+
+- main.cpp
+    Added logic for expression evaluation.
+
+- bP_user_guide.md
+    Added instruction on mathamatical evaluation.
