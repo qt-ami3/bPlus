@@ -135,7 +135,7 @@ Changes:
 
 - All applicable for loops drop the braces.
 
-## Latest: Expression evaluation! (0.4.2)
+## Expression evaluation! (0.4.2)
 
 Today I added expression evaluation so you can actually do things with variables now other than print them. I plan on adding logic statements next so you can dynamic programs so, gah whatever.
 
@@ -153,3 +153,32 @@ changes:
 
 - bP_user_guide.md
     Added instruction on mathamatical evaluation.
+
+## Latest: Instruction name dispatch (0.4.3)
+
+No new language features here. Before this, main.cpp asked "does this line contain the text `shout`?" and "does it contain the text `break`?" for every single statement, as separate ifs, which meant every builtin got checked on every line whether or not it was being called, and a variable whose name merely contained `break` would run break. Now the instruction name is parsed out once, up front, and only the matching builtin is looked at. Adding a builtin no longer adds a scan to every line of every program.
+
+Added:
+- ./interpreter/unit_tests
+    a python script and a host of sample .bp folders for testing the parsing of the interpreter.
+
+Changes:
+
+- main.cpp
+    Statement execution now parses `name(arg)` structurally. The statement is trimmed, split at the first `(` into an instruction name and an argument, and the name is matched against `shout` and `break` in a single if/else chain. Replaces the four independent string_contains scans that ran per statement. The quoted-string check for shout now looks at the argument instead of the whole statement.
+
+Fixes:
+
+- Unknown instructions are reported again
+    A call that isn't `shout`, `break`, or an assignment now prints `Unknown function: <name>` to stderr, restoring the unknown-instruction error lost in 0.3.0. A statement with no `(` at all reports `Not a statement: <statement>`. Both are non-fatal, in keeping with 0.3.0's error handling.
+- Statements no longer trigger more than one builtin
+    `breaker = 3;` was matching the `break` check and printing two blank lines. `x = "shout(5)";` was matching the `shout` check and printing `shout(5)` on assignment. Both now take the assignment branch only.
+
+Known issues:
+
+- Assignment detection is still substring-based
+    The choice between "assignment" and "call" is still `string_contains(statement, "=")` on the raw text, so a statement carrying an `=` inside a string literal is treated as an assignment. `shout("a = b");` still misparses. The instruction-name half of 0.3.0's substring-classification issue is fixed; this half is not.
+- Verbose output
+    Statements are trimmed before tokenising, so `-v` token lines no longer carry the leading newline that read_until returns. Cosmetic, but the output differs from 0.4.2.
+- Statement reading is unchanged
+    read_until still reopens the source file and re-reads it from the start once per statement, so execution is still quadratic in file length. The dispatch cost was never the bottleneck here; this is.

@@ -1,0 +1,4 @@
+n = 1;
+shout("a");
+break(n);
+shout("b");

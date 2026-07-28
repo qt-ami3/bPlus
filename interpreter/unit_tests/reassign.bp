@@ -1,0 +1,6 @@
+v = 1;
+shout(v);
+v = 2;
+shout(v);
+v = "now a string";
+shout(v);

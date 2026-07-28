@@ -1,0 +1,3 @@
+shout(8 / 2);
+shout(" ");
+shout(7 / 2);

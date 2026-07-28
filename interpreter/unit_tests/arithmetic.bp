@@ -1,0 +1,5 @@
+shout(2 + 3 * 4);
+shout(" ");
+shout(10 - 4 - 3);
+shout(" ");
+shout(6 * 7);

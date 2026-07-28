@@ -2,5 +2,5 @@ x = 1;
 y = 2;
 z = x + y;
 shout(1 + 2);
-break();
+shout(" ");
 shout(z);

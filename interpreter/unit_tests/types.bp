@@ -1,0 +1,14 @@
+int a = 5;
+long b = 9000000000;
+float c = 2.5;
+string d = "text";
+bool e = false;
+shout(a);
+shout(" ");
+shout(b);
+shout(" ");
+shout(c);
+shout(" ");
+shout(d);
+shout(" ");
+shout(e);

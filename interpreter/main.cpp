@@ -98,40 +98,49 @@ int main(int argc, char* argv[]) {
   string delimiters = "();";
 
   for (int i = 0; i < semicolon_count; i++) {
-    string statement = read_until(filename, ';', 1, i);
+    const string statement = trim(read_until(filename, ';', 1, i));
     vector<string> tokens = split_multi(statement, delimiters);
 
-    if (string_contains(statement, "=")) assign_variable(variables, statement);
-
-    if (string_contains(statement, "shout") && string_contains(statement, "\"")) {
-      cout << between(statement, '"', '"');
-    } else if (string_contains(statement, "shout")) {
-      string arg = between(statement, '(', ')');
-
-      if (auto value = eval_expr(arg, variables)) {   // shout(1 + 2);
-        print_variable(Variable{VarType::Int, false, *value});
-      } else {                                        // shout(z);
-        auto it = variables.find(arg);
-        if (it != variables.end()) print_variable(it->second);
+    if (string_contains(statement, "=")) {
+      assign_variable(variables, statement);
+    } else {
+      //  Anything else is a "name(arg)" call; the name alone selects the
+      //  builtin, so only the matching one is looked at.
+      const size_t paren = statement.find('(');
+      if (paren == string::npos) {
+        cerr << "Not a statement: " << statement << endl;
+        continue;
       }
-    }
 
-    if (string_contains(statement, "break")) {
-      string arg = between(statement, '(', ')');
+      const string name = trim(statement.substr(0, paren));
+      const string arg = between(statement, '(', ')');
 
-      if (arg.empty()) {
-        cout << endl << endl;
-      } else try {
-        int count = stoi(arg);
-        for (int i = 0; i <= count; i++)
-          cout << endl;
-      } catch (const invalid_argument &e) {
-        auto it = variables.find(arg);
-        if (it != variables.end()) {
-          auto value = as_integer(it->second);
-          if (value) for (long long i = 0; i <= *value; i++)
-              cout << endl;
+      if (name == "shout") {
+        if (string_contains(arg, "\"")) {             // shout("text");
+          cout << between(arg, '"', '"');
+        } else if (auto value = eval_expr(arg, variables)) {  // shout(1 + 2);
+          print_variable(Variable{VarType::Int, false, *value});
+        } else {                                      // shout(z);
+          auto it = variables.find(arg);
+          if (it != variables.end()) print_variable(it->second);
         }
+      } else if (name == "break") {
+        if (arg.empty()) {
+          cout << endl << endl;
+        } else try {
+          int count = stoi(arg);
+          for (int i = 0; i <= count; i++)
+            cout << endl;
+        } catch (const invalid_argument &e) {
+          auto it = variables.find(arg);
+          if (it != variables.end()) {
+            auto value = as_integer(it->second);
+            if (value) for (long long i = 0; i <= *value; i++)
+                cout << endl;
+          }
+        }
+      } else {
+        cerr << "Unknown function: " << name << endl;
       }
     }
 

@@ -1,0 +1,5 @@
+bool yes = true;
+bool no = false;
+shout(yes);
+shout(" ");
+shout(no);
