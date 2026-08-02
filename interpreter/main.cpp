@@ -1,5 +1,6 @@
 using namespace std;
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <cctype>
@@ -11,10 +12,11 @@ using namespace std;
 #include "./include/assign.h"
 #include "./include/between.h"
 #include "./include/variable.h"
-#include "./include/read_until.h"
+#include "./include/eval_expr.h"
+#include "./include/validate.h"
 #include "./include/has_extension.h"
 #include "./include/string_contains.h"
-#include "./include/eval_expr.h"
+#include "./include/instruction_loop.h"
 
 void print_usage(const string& program_name) {
   cerr << "Usage:" << endl
@@ -52,111 +54,32 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  map<string, Variable> variables;
-  
   int statement_count = 0;
   int semicolon_count = 0;
-  
+
+  vector<string> statements;
   vector<string> errors;
-  bool in_string = false;
-  int line_number = 0;
-  string line;
-  while (getline(file, line)) {
-    line_number++;
+  vector<string> reported;  //  Errors already on screen, so a broken file isn't spammed.
 
-    vector<size_t> semicolons;  //  Positions of every ';' outside a string.
-    for (size_t i = 0; i < line.size(); i++) {
-      if (line[i] == '"') in_string = !in_string;
-      else if (line[i] == ';' && !in_string) semicolons.push_back(i);
+  bool instruction_loop_break = false;
+  while (!instruction_loop_break) {
+    if (!validate_and_count(filename, statements, statement_count, semicolon_count, errors)) {
+      if (errors != reported) {
+        for (const string& error : errors) cerr << error << endl;
+        reported = errors;
+      }
+      continue;  //  Hold here, re-reading, until the file is valid again.
     }
+    reported.clear();
 
-    const string statement = trim(line);
-    if (statement.empty()) continue;
-
-    statement_count++;
-    semicolon_count += semicolons.size();
-
-    if (semicolons.empty()) {
-      errors.push_back("Missing ';' for statement line " + to_string(line_number)
-        + ": " + statement + "*;*");
-      continue;
-    }
-
-    //  A statement ends at its first ';', so any that follow are extra.
-    for (size_t i = 1; i < semicolons.size(); i++) {
-      errors.push_back("Extra ';' for statement line " + to_string(line_number)
-        + ": " + trim(line.substr(0, semicolons[i])) + "*;*"
-        + trim(line.substr(semicolons[i] + 1)));
-    }
+    map<string, Variable> variables;  //  Each pass starts from a clean state.
+    set<string> active;               //  Files being run, so `use` can refuse a cycle.
+    instruction_loop(instruction_loop_break, filename, statements, variables, verbose, active);
   }
 
-  if (!errors.empty()) {
-    for (const string& error : errors) cerr << error << endl;
-    return 1;
-  }
-
-  string delimiters = "();";
-
-  for (int i = 0; i < semicolon_count; i++) {
-    const string statement = trim(read_until(filename, ';', 1, i));
-    vector<string> tokens = split_multi(statement, delimiters);
-
-    if (string_contains(statement, "=")) {
-      assign_variable(variables, statement);
-    } else {
-      //  Anything else is a "name(arg)" call; the name alone selects the
-      //  builtin, so only the matching one is looked at.
-      const size_t paren = statement.find('(');
-      if (paren == string::npos) {
-        cerr << "Not a statement: " << statement << endl;
-        continue;
-      }
-
-      const string name = trim(statement.substr(0, paren));
-      const string arg = between(statement, '(', ')');
-
-      if (name == "shout") {
-        if (string_contains(arg, "\"")) {             // shout("text");
-          cout << between(arg, '"', '"');
-        } else if (auto value = eval_expr(arg, variables)) {  // shout(1 + 2);
-          print_variable(Variable{VarType::Int, false, *value});
-        } else {                                      // shout(z);
-          auto it = variables.find(arg);
-          if (it != variables.end()) print_variable(it->second);
-        }
-      } else if (name == "break") {
-        if (arg.empty()) {
-          cout << endl << endl;
-        } else try {
-          int count = stoi(arg);
-          for (int i = 0; i <= count; i++)
-            cout << endl;
-        } catch (const invalid_argument &e) {
-          auto it = variables.find(arg);
-          if (it != variables.end()) {
-            auto value = as_integer(it->second);
-            if (value) for (long long i = 0; i <= *value; i++)
-                cout << endl;
-          }
-        }
-      } else {
-        cerr << "Unknown function: " << name << endl;
-      }
-    }
-
-    if (verbose) {
-      for (size_t j = 0; j < tokens.size(); j++) {
-        cout << tokens[j];
-        if (j + 1 < tokens.size()) cout << " ";
-      }
-      cout << endl;
-    }
-  }
-  
   if (verbose) {
     cout << "Statements read;" << endl;
-    for (int i = 0; i < semicolon_count; i++)
-      cout << read_until(filename, ';', 1, i) << endl;
+    for (const string& statement : statements) cout << statement << endl;
 
     cout << "Counted statements: " << statement_count << endl;
     cout << "Semicolons counted: " << semicolon_count;

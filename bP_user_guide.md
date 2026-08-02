@@ -17,6 +17,12 @@ Compiles main.cpp, whilst in the interpreter directory, to the name of the file 
 - "./bp filename.bp"
 Runs interpreter with specified file.
 
+The interpreter does not run your file once and stop. It reads the file, runs it, then reads it again, over and over, until your program calls `end();`. Two things follow from that. Editing the file while it is running changes what it does on the very next pass, so you can watch a change take effect without restarting. And a file with no `end();` in it runs forever — press Ctrl-C to stop it.
+
+Every pass starts with no variables at all, so one pass behaves exactly like a fresh run.
+
+If you save the file with a mistake in it, the interpreter prints the problem once and waits, re-reading, until you fix it. It does not exit and it does not repeat the message.
+
 - "./bp filename.bp -v"
 Runs interpreter with specified file and provides a detailed reading of the interpreter, for developers. Also accepts -verbose.
 
@@ -32,8 +38,39 @@ shout(name);
 
 Only one argument is supported. `shout("hi ", name, "!");` does **not** print all three parts — see "Known issue: shout is single-argument" below.
 
+`shout` prints a string literal, a variable, or an expression. A bare number on its own prints nothing: `shout(5);` and `shout(true);` produce no output, while `shout(5 + 0);` prints `5`. Put the value in a variable, or give it an operator.
+
 - break();
-Ends the current line. `break()` prints 2 newlines; `break(N)` (a literal integer or a variable) prints `N + 1` newlines, so `break(1)` also prints 2 and `break(2)` prints 3.
+Ends the current line. `break()` and `break(1)` print one newline, `break(2)` prints two, `break(0)` prints none. The argument may be a literal integer or a variable.
+
+- end();
+Ends the file it is written in. In the file you ran, this is what stops the interpreter, so most programs finish with `end();` on the last line.
+
+```
+shout("done");
+end();
+```
+
+- use("otherfile.bp");
+Runs another file and shares every variable with it: the other file can read variables you have set, and anything it sets is still there when it hands control back.
+
+`use` is not a way of including a library. **It runs the other file over and over until that file calls its own `end();`.** That is how you write a loop:
+
+```
+main.bp                    second.bp
+x = 0;                     x = x + 1;
+use("second.bp");          shout(x);
+end();                     break();
+                           if (x == 5) {
+                             end();
+                           }
+```
+
+Running `./bp main.bp` prints 1, 2, 3, 4, 5 on separate lines and stops. `end();` inside second.bp ends only second.bp's repeat; main.bp carries on to its own `end();`.
+
+Two things to watch. Anything you want counted has to live in the file that repeats — an increment in main.bp runs once and never changes again. And a file used without a reachable `end();` repeats forever.
+
+A file cannot use itself, or use a file that uses it back. That prints `Cyclic use:` and the program carries on.
 
 ### Known issue: shout is single-argument
 
@@ -43,6 +80,57 @@ Ends the current line. `break()` prints 2 newlines; `break(N)` (a literal intege
 - `shout(name, other);` prints nothing at all.
 
 Older examples in this guide and in `examples/dataTypes.bp` that call `shout` with more than one argument no longer work as written; call `shout` once per value instead.
+
+## Making decisions
+
+- if
+
+```
+if (x > 5) {
+  shout("x is big");
+  break();
+}
+```
+
+The block runs only when the condition holds. Conditions accept `==`, `!=`, `<`, `>`, `<=` and `>=`. Either side can be a number, a variable, or a whole expression:
+
+```
+if (count == 0) {
+  shout("empty");
+}
+if (x + 1 < y * 2) {
+  shout("still room");
+}
+```
+
+Two strings compare as text, so `if (name == "carl")` and `if (name != "bob")` both work. Comparing text against a number is not meaningful and reports `Bad condition:`.
+
+A condition with no operator is true when the value is not zero, not `false`, and not an empty string:
+
+```
+bool ready = true;
+if (ready) {
+  shout("go");
+}
+```
+
+`if` blocks nest, and a block that does not run is skipped whole, including any blocks inside it.
+
+**Braces need a line of their own.** The opening brace ends the `if` line, and the closing brace sits alone:
+
+```
+if (x > 5) {        correct
+  shout("a");
+}
+
+if (x > 5) { shout("a"); }        rejected
+```
+
+Writing it on one line reports `Braces belong on a line of their own`. Leaving a block unclosed reports `Unclosed '{'`, and a stray closing brace reports `Unmatched '}'`.
+
+There is no `else` yet. Write the opposite condition as a second `if`.
+
+Conditions cannot contain brackets of their own: `if ((a + b) > 5)` reports `Bad condition:`, because the condition is read as the text between the first `(` and the first `)`. Work it out into a variable first.
 
 ## Variables
 

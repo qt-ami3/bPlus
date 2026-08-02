@@ -1,10 +1,11 @@
-#include "../include/assign.h"
-#include "../include/split.h"
-#include "../include/between.h"
-#include "../include/trim.h"
-#include "../include/parse_literal.h"
-#include "../include/eval_expr.h"
+using namespace std;
 #include <iostream>
+#include "../include/trim.h"
+#include "../include/split.h"
+#include "../include/assign.h"
+#include "../include/between.h"
+#include "../include/eval_expr.h"
+#include "../include/parse_literal.h"
 
 void assign_variable(std::map<std::string, Variable>& variables, const std::string& statement) {
   std::string lhs = trim(split(statement, '=')[0]);

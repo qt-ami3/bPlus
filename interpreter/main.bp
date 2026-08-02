@@ -1,5 +1,3 @@
-shout("Hello World!");
-break(2);
-shout("Hello World!");
-break(2);
-shout("Hello World!");
+x = 0;
+use("second.bp");
+end();

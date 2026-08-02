@@ -1,0 +1,6 @@
+x = x + 1;
+shout(x);
+if (x >= 5) {
+  end();
+}
+break(2);

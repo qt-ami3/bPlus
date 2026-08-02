@@ -154,7 +154,7 @@ changes:
 - bP_user_guide.md
     Added instruction on mathamatical evaluation.
 
-## Latest: Instruction name dispatch (0.4.3)
+## Instruction name dispatch (0.4.3)
 
 No new language features here. Before this, main.cpp asked "does this line contain the text `shout`?" and "does it contain the text `break`?" for every single statement, as separate ifs, which meant every builtin got checked on every line whether or not it was being called, and a variable whose name merely contained `break` would run break. Now the instruction name is parsed out once, up front, and only the matching builtin is looked at. Adding a builtin no longer adds a scan to every line of every program.
 
@@ -182,3 +182,87 @@ Known issues:
     Statements are trimmed before tokenising, so `-v` token lines no longer carry the leading newline that read_until returns. Cosmetic, but the output differs from 0.4.2.
 - Statement reading is unchanged
     read_until still reopens the source file and re-reads it from the start once per statement, so execution is still quadratic in file length. The dispatch cost was never the bottleneck here; this is.
+
+## Latest: Control flow, files that repeat, and a program that never stops reading itself (0.5.0)
+
+This is the release where bP stops being a list of instructions and starts being able to decide things. `if` blocks are in, with real conditions. The interpreter also re-reads its source file continuously now, so editing a running program changes what it does without restarting it, and `use` pulls in another file while sharing every variable with it.
+
+The one thing I want to write down for later me: `use` is not an include. It repeats the file until that file ends itself, which is why the counter example works. A helper file with no `end();` in it will loop forever. I picked that deliberately but it will catch me out at some point.
+
+Added:
+
+- if
+    Braced blocks with a condition. Conditions take `==`, `!=`, `<`, `>`, `<=` and `>=`, or a lone value that is true when it isn't zero, isn't false, and isn't an empty string. Either side can be an expression or a variable, and two strings compare as text.
+
+```
+if (x > 5) {
+  shout("big");
+}
+if (name == "carl") {
+  shout("hi carl");
+}
+```
+
+- end
+    Stops the file it appears in. In the file you ran, that also stops the interpreter re-reading it, so `end();` is how a program finishes. In a file pulled in by `use`, it only ends that file's repeat.
+
+- use
+    Runs another file, repeatedly, until that file's own `end` fires, sharing all variable data both ways. A file cannot use itself, directly or through a chain; that reports `Cyclic use:` and carries on. The used file is re-read every time round the repeat, so editing it changes the loop while it runs.
+
+```
+main.bp                    second.bp
+x = 0;                     x = x + 1;
+use("second.bp");          shout(x);
+end();                     break();
+                           if (x == 5) {
+                             end();
+                           }
+```
+
+- Continuous re-reading
+    The interpreter now loops: read the file, check it, run it, repeat, until something calls `end`. Editing a running program takes effect on the next pass, including statements you add or delete. Variables start empty on every pass, so a pass behaves exactly like a fresh run.
+
+- include/validate.h, src/validate.cpp
+- include/instruction_loop.h, src/instruction_loop.cpp
+
+Changes:
+
+- break counts what you tell it
+    `break()` and `break(1)` both print one newline, `break(2)` prints two, `break(0)` prints none. It used to print one more than asked, with no argument meaning two. Any program relying on the old count now prints one fewer blank line.
+
+- Statements are read once per pass, not once each
+    The file is read into a list of statements up front instead of reopening it for every statement through read_until. Execution is no longer quadratic in file length. read_until is now unused by anything, and left in place.
+
+- Assignment is detected properly
+    Deciding whether a statement assigns is now a scan for a lone `=` outside quotes, skipping `==`, `!=`, `<=` and `>=`. Without it every condition would have been read as an assignment.
+
+- main.cpp
+    Down to argument handling and the re-read loop. The statement loop moved to instruction_loop, the file checking to validate.
+
+Fixes:
+
+- `shout("a = b");`
+    Prints `a = b`. It used to also run as an assignment and log `Could not infer type for: b")` to stderr first. Listed as a known issue since 0.3.0.
+
+- Statements no longer trigger the wrong builtin, and a cached file no longer traps the interpreter
+    A `use`d file was checked once and then repeated from that copy, so edits to it never landed. Worse, editors and shell redirection empty a file before writing it; a pass that read it in that instant saw no statements, never reached an `end`, and span forever in silence with no way back. It is re-read every time round now.
+
+Known issues:
+
+- A file pulled in by `use` must be able to reach an `end`
+    No `end`, no way out. This includes a file that cannot be read: `use("typo.bp")` reports `Could not open file:` once and then holds, waiting for the file to appear, rather than carrying on.
+
+- Braces need a line of their own
+    `if (x > 5) { shout("a"); }` is rejected with `Braces belong on a line of their own`. The opening brace ends its line, the closing brace has a line to itself.
+
+- No else
+    Write the opposite condition as a second `if`.
+
+- Conditions cannot contain brackets
+    `if ((a + b) > 5)` reads the condition as `(a + b` and reports `Bad condition:`, because the argument is still taken as the text between the first `(` and the first `)`. It fails loudly rather than quietly.
+
+- `end` is also what stops the re-reading
+    A program that ends cannot be edited while it runs, because it has already exited. Live editing and finishing on your own terms are the same switch.
+
+- shout still prints nothing for a bare literal
+    `shout(5);` and `shout(true);` print nothing; `shout(5 + 0);` prints 5. Expression evaluation only engages when there is an operator, and shout has no fallback to plain literal parsing after that.
