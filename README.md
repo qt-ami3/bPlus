@@ -1,4 +1,4 @@
-#   bP - a modern, dynamically typed, successor to the B programming language
+#   bP - a reflective, dynamically typed, successor to the B programming language
 
 ##  Table of contents
 - 1. Q&A
@@ -18,3 +18,4 @@ Currently, there is no contributer's file, if you want to contribute, make a for
 ## 3. Philosophies
 -   Instead of the machine word being the only data type, it will be, as mentioned, dynamically typed.
 -   Simplicity with integrity; the language should aim to be as simple as possible whilst maintaining full user control.
+-   Everything is a loop until specified otherwise.
