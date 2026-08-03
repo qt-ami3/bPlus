@@ -267,11 +267,11 @@ Known issues:
 - shout still prints nothing for a bare literal
     `shout(5);` and `shout(true);` print nothing; `shout(5 + 0);` prints 5. Expression evaluation only engages when there is an operator, and shout has no fallback to plain literal parsing after that.
 
-## Latest: Arrays, and libraries written in C++ (0.6.0)
+## Arrays, and libraries written in C++ (0.6.0)
 
 Arrays are in, which is the first time bP can hold more than one thing under one name. They work the way you would expect from C: `arr[3];` to make one, `arr[0]` to reach a slot, and the number in the brackets can be worked out rather than written down, so `nums[i + 1]` does what it looks like.
 
-The other half of this release is that libraries can now be written in C++ and sit outside the core interpreter, in src/libraries. `use "shell_utilites"` declares one and unlocks its instructions. This is the first step towards the standard library being something I add to rather than something baked into the statement loop.
+The other half of this release is that libraries can now be written in C++ and sit outside the core interpreter, in src/libraries. `use "shell_utilities"` declares one and unlocks its instructions. This is the first step towards the standard library being something I add to rather than something baked into the statement loop.
 
 One rename to be aware of before anything else: the instruction that runs another bP file is now **pass**, not use. `use` means the C++ library declaration. Any program written against 0.5.0 needs `use("file.bp")` changed to `pass("file.bp")`.
 
@@ -308,15 +308,15 @@ if (nums[3] > 35) {
     Declares a library compiled into the interpreter from src/libraries, making its instructions callable. No brackets and no semicolon, which is a shape nothing else in the language has.
 
 ```
-use "shell_utilites"
+use "shell_utilities"
 clear();
 end();
 ```
 
-    Without the declaration the instruction refuses to run and says what is missing: `clear needs: use "shell_utilites"`. An unknown name reports `Unknown library:`. The declaration counts only for the file it is written in, and has to come before the instructions it enables.
+    Without the declaration the instruction refuses to run and says what is missing: `clear needs: use "shell_utilities"`. An unknown name reports `Unknown library:`. The declaration counts only for the file it is written in, and has to come before the instructions it enables.
 
 - clear
-    Empties the screen. Comes from shell_utilites.
+    Empties the screen. Comes from shell_utilities.
 
 - src/libraries and include/libraries
     Where a library lives. Dropping a .cpp and a header in needs no build change.
@@ -339,7 +339,7 @@ if (helper) {
 - include/array.h, src/array.cpp
 - include/validate.h, src/validate.cpp
 - include/process_ram_kb.h, src/process_ram_kb.cpp
-- include/libraries/shell_utilites.h, src/libraries/shell_utilites.cpp
+- include/libraries/shell_utilities.h, src/libraries/shell_utilities.cpp
 
 Changes:
 
@@ -363,7 +363,7 @@ Fixes:
 - Statements and their output no longer collide under -v
     shout writes no trailing newline, so the old trace printed `17993shout x`. Each trace line now starts on a fresh line.
 
-- src/libraries/shell_utilites.cpp did not compile
+- src/libraries/shell_utilities.cpp did not compile
     Missing `<unistd.h>`, `<iostream>` and `<cstdlib>`.
 
 - src/process_ram_kb.cpp called sscanf without `<cstdio>`
@@ -385,3 +385,5 @@ Known issues:
 
 - Cyclic use:
     The cycle message still names an instruction that no longer exists.
+
+## Latest: exec() function implemented into shell_utilities library 0.7.0

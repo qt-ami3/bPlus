@@ -86,8 +86,8 @@ One header in `include/` and one implementation in `src/` per module, all pulled
 - `long get_process_ram_kb()` / `void print_system_info(bool enabled)` — process_ram_kb.h / process_ram_kb.cpp
   Reads `VmRSS` from `/proc/self/status`. `print_system_info` prints `RAM: N KB` and returns immediately when `enabled` is false. Called by main at each end of a pass. Linux specific.
 
-- `void setBufferedInput(bool enable)` / `void clearScreen()` — libraries/shell_utilites.h / libraries/shell_utilites.cpp
-  Terminal helpers, compiled from `src/libraries/`. `clearScreen` writes `\033[2J\033[H` and backs the `clear` instruction. `setBufferedInput` turns off canonical mode and echo so a keypress arrives without Enter; it is **not** exposed to bP yet, and note it restores only on an explicit `setBufferedInput(true)` — an interpreter that exits while unbuffered leaves the user's shell with echo off.
+- `void set_buffered_input(bool enable)` / `void clear_screen()` — libraries/shell_utilities.h / libraries/shell_utilities.cpp
+  Terminal helpers, compiled from `src/libraries/`. `clear_screen` writes `\033[2J\033[H` and backs the `clear` instruction. `set_buffered_input` turns off canonical mode and echo so a keypress arrives without Enter; it is **not** exposed to bP yet, and note it restores only on an explicit `set_buffered_input(true)` — an interpreter that exits while unbuffered leaves the user's shell with echo off.
 
 ## unit_tests/
 

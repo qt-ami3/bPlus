@@ -18,7 +18,7 @@ main.cpp             CLI handling and the pass loop, nothing else.
 └─ unit_tests/       Python harness plus one .bp program per test case.
 ```
 
-Core modules (header + impl pair each): `has_extension`, `trim`, `string_contains`, `between`, `split`, `read_until`, `variable`, `parse_literal`, `assign`, `eval_expr`, `validate`, `array`, `instruction_loop`. Outside the core: `process_ram_kb` (memory readout for `-v`) and `libraries/shell_utilites` (`clearScreen`, `setBufferedInput`). `main.cpp` is down to CLI handling and the re-read loop; the statement loop and every built-in live in `instruction_loop`, file reading and checking in `validate`, and array declaration and element assignment in `array`.
+Core modules (header + impl pair each): `has_extension`, `trim`, `string_contains`, `between`, `split`, `read_until`, `variable`, `parse_literal`, `assign`, `eval_expr`, `validate`, `array`, `instruction_loop`. Outside the core: `process_ram_kb` (memory readout for `-v`) and `libraries/shell_utilities` (`clear_screen`, `set_buffered_input`). `main.cpp` is down to CLI handling and the re-read loop; the statement loop and every built-in live in `instruction_loop`, file reading and checking in `validate`, and array declaration and element assignment in `array`.
 
 `read_until` is no longer called by anything. It is left in place, not deleted.
 
@@ -87,11 +87,11 @@ A target that fails validation reports its errors once and the repeat holds, re-
 
 ```
 static const map<string, set<string>> libraries = {
-  {"shell_utilites", {"clear"}},
+  {"shell_utilities", {"clear"}},
 };
 ```
 
-`use "library"` — no parentheses, no semicolon — inserts a name into a `set<string> enabled` local to `instruction_loop`. `providing_library(name)` finds the owner of an instruction, and the dispatch arm refuses it unless the file declared it, reporting `clear needs: use "shell_utilites"`. Being local to the call means the declaration does **not** cross a `pass`; each file declares for itself.
+`use "library"` — no parentheses, no semicolon — inserts a name into a `set<string> enabled` local to `instruction_loop`. `providing_library(name)` finds the owner of an instruction, and the dispatch arm refuses it unless the file declared it, reporting `clear needs: use "shell_utilities"`. Being local to the call means the declaration does **not** cross a `pass`; each file declares for itself.
 
 Nothing is loaded at runtime — the C++ is already linked in. `use` decides what a program is allowed to call. Adding an instruction is a name in the registry set plus an arm in the dispatch; the refusal message comes free.
 
@@ -133,7 +133,7 @@ CORE = main.cpp $(wildcard src/*.cpp)
 LIBS = $(wildcard src/libraries/*.cpp)
 ```
 
-`src/libraries/` holds optional, platform-specific code that interpreting a `.bp` file does not depend on — currently `shell_utilites` (`clearScreen`, `setBufferedInput`), with headers under `include/libraries/`. Dropping a `.cpp` and a header into those two directories is the whole of adding one; the wildcards need no editing.
+`src/libraries/` holds optional, platform-specific code that interpreting a `.bp` file does not depend on — currently `shell_utilities` (`clear_screen`, `set_buffered_input`), with headers under `include/libraries/`. Dropping a `.cpp` and a header into those two directories is the whole of adding one; the wildcards need no editing.
 
 Both wildcards match `*.cpp` only, so the superseded `src/has_extension.c` stays out of the build.
 

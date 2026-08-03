@@ -5,6 +5,6 @@
 
 // Turns line buffering and echo off, so a keypress arrives without Enter
 // having been pressed. Call with true to put the terminal back as it was.
-void setBufferedInput(bool enable);
+void set_buffered_input(bool enable);
 
-void clearScreen();
+void clear_screen();

@@ -106,15 +106,15 @@ Without that guard, passing to a file that does not exist waits forever for it t
 Declares a library that is built into the interpreter, making its instructions available to the file. Note the shape: no brackets, and **no semicolon**.
 
 ```
-use "shell_utilites"
+use "shell_utilities"
 clear();
 end();
 ```
 
-`clear();` empties the screen. It comes from the `shell_utilites` library, so without the `use` line it refuses to run and tells you what is missing:
+`clear();` empties the screen. It comes from the `shell_utilities` library, so without the `use` line it refuses to run and tells you what is missing:
 
 ```
-clear needs: use "shell_utilites"
+clear needs: use "shell_utilities"
 ```
 
 A name that is not a library reports `Unknown library:` and the program carries on.
@@ -282,3 +282,18 @@ Using a slot of an array you never declared reports `Unknown array:`.
 There is no way to print a whole array at once. `shout(arr);` prints nothing — print the slots one at a time.
 
 A static array will not take a sum in a slot: `int t[2]; t[0] = 1 + 1;` is a type error, the same restriction static variables already have. A dynamic array takes them fine.
+
+## shell_utilites
+
+The shell_utilities library is a work in progess feature-set not included in the core features of the b+ interpreter, to include shell_utilities, include; "use "shell_utilities"" at the top of your file.
+
+shell_utilities includes:
+
+-exec()
+    Accepts a string or string literal to run a command line prompt in your b+ code, good for scripting which is intended as the most basic usage of the language.
+
+-clear()
+    As previously mentioned, clears the terminal.
+
+-set_buffered_input() **name not final**
+    Sets the input buffer of the shell, still figuring out a safe way to implement it.

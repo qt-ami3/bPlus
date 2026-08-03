@@ -1,6 +1,7 @@
 using namespace std;
 #include <map>
 #include <set>
+#include <cstdlib>
 #include <cctype>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@ using namespace std;
 #include "../include/string_contains.h"
 #include "../include/process_ram_kb.h"
 #include "../include/instruction_loop.h"
-#include "../include/libraries/shell_utilites.h"
+#include "../include/libraries/shell_utilities.h"
 
 //  Two spellings of one path ("x.bp", "./x.bp") must compare equal or a cycle
 //  slips through and recurses until the stack runs out.
@@ -158,8 +159,15 @@ static bool evaluate_condition(const string& condition,
 //  brings. `use "name"` makes a library's instructions callable; without it
 //  they stay refused, so a program has to declare what it depends on.
 static const map<string, set<string>> libraries = {
-  {"shell_utilites", {"clear"}},
+  {"shell_utilities", {"clear", "exec"}},
 };
+
+//  system() takes a C string and is marked warn_unused_result, so both call
+//  sites go through here rather than ignoring what the shell reported.
+static void run_shell(const string& command) {
+  if (system(command.c_str()) != 0)
+    cerr << "exec failed: " << command << endl;
+}
 
 //  The library providing `name`, or "" when no library does.
 static string providing_library(const string& name) {
@@ -299,7 +307,7 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
           print_variable(Variable{VarType::Int, false, *value});
         } else {                                      // shout(z);
           auto it = variables.find(arg);
-          if (it != variables.end()) print_variable(it->second);
+          if (it != variables.end()) {print_variable(it->second);}
         }
       } else if (name == "break") {
         if (arg.empty()) {
@@ -320,7 +328,22 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
         if (!enabled.count(library)) {
           cerr << name << " needs: use \"" << library << "\"" << endl;
         } else if (name == "clear") {
-          clearScreen();
+          clear_screen();
+        } else if (name == "exec") {
+          if (string_contains(arg, "\"")) {          // exec("ls");
+            run_shell(between(arg, '"', '"'));
+          } else {                                   // exec(command);
+            auto it = variables.find(arg);
+
+            if (it == variables.end()) {
+              cerr << "Unknown variable: " << arg << endl;
+            } else if (!holds_alternative<string>(it->second.value)) {
+              cerr << "exec needs a string, " << arg << " is "
+                << var_type_name(it->second.type) << endl;
+            } else {
+              run_shell(get<string>(it->second.value));
+            }
+          }
         }
       } else if (name == "end") {
         flag = true;

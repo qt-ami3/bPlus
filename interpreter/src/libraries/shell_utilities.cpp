@@ -3,9 +3,9 @@ using namespace std;
 #include <iostream>
 #include <termios.h>
 #include <unistd.h>
-#include "../../include/libraries/shell_utilites.h"
+#include "../../include/libraries/shell_utilities.h"
 
-void setBufferedInput(bool enable) { //sets terminal input to repeat and detect without `enter`.
+void set_buffered_input(bool enable) { //sets terminal input to repeat and detect without `enter`.
   static bool enabled = true;
   static struct termios old;
   struct termios newt;
@@ -23,7 +23,7 @@ void setBufferedInput(bool enable) { //sets terminal input to repeat and detect 
   }
 }
 
-void clearScreen() {
+void clear_screen() {
   #ifdef _WIN32
     system("cls");
   #else
