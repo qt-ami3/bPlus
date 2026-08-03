@@ -10,7 +10,7 @@
 namespace {
 
 struct Token {
-  enum Kind { Number, Name, Op, LParen, RParen } kind;
+  enum Kind { Number, Name, Op, LParen, RParen, LBracket, RBracket } kind;
   std::string text;  // Number/Name spelling.
   char op = 0;       // Operator character for Op tokens.
 };
@@ -43,6 +43,8 @@ bool tokenize(const std::string& expr, std::vector<Token>& out) {
     }
     if (c == '(') { out.push_back({Token::LParen, "", 0}); i++; continue; }
     if (c == ')') { out.push_back({Token::RParen, "", 0}); i++; continue; }
+    if (c == '[') { out.push_back({Token::LBracket, "", 0}); i++; continue; }
+    if (c == ']') { out.push_back({Token::RBracket, "", 0}); i++; continue; }
     return false;  // Illegal character -> not an expression.
   }
   return true;
@@ -118,6 +120,24 @@ struct Parser {
     }
     if (t->kind == Token::Name) {
       pos++;
+
+      const Token* bracket = peek();
+      if (bracket && bracket->kind == Token::LBracket) {  // arr[0], arr[i + 1]
+        pos++;
+        Value index = parse_sum();
+        const Token* close = peek();
+        if (!ok || !close || close->kind != Token::RBracket) { ok = false; return {}; }
+        pos++;
+
+        const long long slot = static_cast<long long>(index.v);
+        auto element = vars.find(t->text + "[" + std::to_string(slot) + "]");
+        if (element == vars.end()) {
+          std::cerr << "Index out of range: " << t->text << "[" << slot << "]\n";
+          ok = false; return {};
+        }
+        return resolve(element->second);
+      }
+
       auto it = vars.find(t->text);
       if (it == vars.end()) {
         std::cerr << "Unknown variable in expression: " << t->text << "\n";
@@ -154,9 +174,40 @@ std::optional<VarValue> eval_expr(const std::string& expr,
 
   // Engage only when there is an actual arithmetic operator token; otherwise
   // this is a plain literal or a lone variable, left for the caller to handle.
+  //  An index counts too: `arr[i]` has no operator but still needs resolving,
+  //  since the caller cannot look it up by name without knowing what `i` is.
   bool has_op = false;
-  for (const Token& t : toks) if (t.kind == Token::Op) { has_op = true; break; }
+  for (const Token& t : toks)
+    if (t.kind == Token::Op || t.kind == Token::LBracket) { has_op = true; break; }
   if (!has_op) return std::nullopt;
+
+  //  A lone element — `arr[0]`, `arr[i + 1]` — is answered straight from the
+  //  map. Going through the arithmetic below would reject a string element as
+  //  "Cannot use string in expression" when nothing arithmetic was asked for,
+  //  and would round a whole number through double on the way back.
+  if (toks.size() >= 4 && toks[0].kind == Token::Name && toks[1].kind == Token::LBracket) {
+    int depth = 0;
+    size_t closing = 0;
+    for (size_t i = 1; i < toks.size(); i++) {
+      if (toks[i].kind == Token::LBracket) depth++;
+      else if (toks[i].kind == Token::RBracket && --depth == 0) { closing = i; break; }
+    }
+
+    if (closing == toks.size() - 1) {
+      const std::vector<Token> index_tokens(toks.begin() + 2, toks.begin() + closing);
+      Parser index_parser{index_tokens, variables};
+      Value index = index_parser.parse_sum();
+      if (!index_parser.ok || index_parser.pos != index_tokens.size()) return std::nullopt;
+
+      const long long slot = static_cast<long long>(index.v);
+      auto element = variables.find(toks[0].text + "[" + std::to_string(slot) + "]");
+      if (element == variables.end()) {
+        std::cerr << "Index out of range: " << toks[0].text << "[" << slot << "]\n";
+        return std::nullopt;
+      }
+      return element->second.value;
+    }
+  }
 
   Parser parser{toks, variables};
   Value result = parser.parse_sum();

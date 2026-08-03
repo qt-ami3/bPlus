@@ -1,16 +1,17 @@
 using namespace std;
 #include <map>
 #include <set>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <variant>
 #include <optional>
+#include <iostream>
 #include <filesystem>
 #include <type_traits>
-#include <cctype>
-#include <iostream>
 #include "../include/trim.h"
 #include "../include/split.h"
+#include "../include/array.h"
 #include "../include/assign.h"
 #include "../include/between.h"
 #include "../include/variable.h"
@@ -18,7 +19,9 @@ using namespace std;
 #include "../include/validate.h"
 #include "../include/parse_literal.h"
 #include "../include/string_contains.h"
+#include "../include/process_ram_kb.h"
 #include "../include/instruction_loop.h"
+#include "../include/libraries/shell_utilites.h"
 
 //  Two spellings of one path ("x.bp", "./x.bp") must compare equal or a cycle
 //  slips through and recurses until the stack runs out.
@@ -151,6 +154,48 @@ static bool evaluate_condition(const string& condition,
   return a >= b;
 }
 
+//  Libraries compiled in from src/libraries, and the instructions each one
+//  brings. `use "name"` makes a library's instructions callable; without it
+//  they stay refused, so a program has to declare what it depends on.
+static const map<string, set<string>> libraries = {
+  {"shell_utilites", {"clear"}},
+};
+
+//  The library providing `name`, or "" when no library does.
+static string providing_library(const string& name) {
+  for (const auto& [library, instructions] : libraries)
+    if (instructions.count(name)) return library;
+
+  return "";
+}
+
+//  A pass over the statements before any of them run. Every `pass("name.bp")`
+//  is noted and a bool named after the library records whether that file is
+//  actually on disk, so a program can check before it commits to running one.
+//  The variable takes the file's stem: pass("libs/maths.bp") sets `maths`.
+static void scan_libraries(const vector<string>& statements,
+                           map<string, Variable>& variables, bool verbose) {
+  for (const string& statement : statements) {
+    if (statement.empty() || statement.back() == '{') continue;
+
+    const size_t paren = statement.find('(');
+    if (paren == string::npos) continue;
+    if (trim(statement.substr(0, paren)) != "pass") continue;
+
+    const string target = between(between(statement, '(', ')'), '"', '"');
+    if (target.empty()) continue;
+
+    const string name = filesystem::path(target).stem().string();
+    if (name.empty()) continue;
+
+    const bool found = filesystem::exists(target);
+    variables[name] = {VarType::Bool, false, found};
+
+    if (verbose)
+      cout << "[library] " << name << " = " << (found ? "true" : "false") << endl;
+  }
+}
+
 //  Index of the '}' closing the block that opens at `start`.
 static size_t matching_close(const vector<string>& statements, size_t start) {
   int depth = 0;
@@ -172,12 +217,44 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
   const string self = canonical_path(filename);
   active.insert(self);
 
+  scan_libraries(statements, variables, verbose);
+
+  set<string> enabled;  //  Libraries this file declared with `use`.
+
   bool stop = false;
   for (size_t i = 0; i < statements.size() && !stop; i++) {
     const string& statement = statements[i];
     vector<string> tokens = split_multi(statement, delimiters);
 
+    if (verbose) {
+      //  Traced before the statement runs, so anything it prints lands under
+      //  its own label. The leading newline guarantees the trace starts at
+      //  column 0 even when the statement before it printed without one.
+      cout << endl << "[" << i + 1 << "] ";
+
+      bool first = true;
+      for (const string& token : tokens) {
+        //  split_multi keeps the space that sat against a '(' or '{'.
+        const string text = trim(token);
+        if (text.empty()) continue;
+
+        if (!first) cout << " ";
+        cout << text;
+        first = false;
+      }
+      cout << endl;
+    }
+
     if (statement == "}") continue;  //  Block end, nothing to run.
+
+    if (statement.rfind("use ", 0) == 0 || statement.rfind("use\t", 0) == 0) {
+      const string library = between(statement, '"', '"');
+
+      if (!libraries.count(library)) cerr << "Unknown library: " << library << endl;
+      else enabled.insert(library);
+
+      continue;
+    }
 
     if (statement.back() == '{') {
       const string header = trim(statement.substr(0, statement.size() - 1));
@@ -199,7 +276,9 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
       continue;
     }
 
-    if (has_assignment(statement)) {
+    if (array_statement(variables, statement)) {
+      //  Declaration or element assignment, already applied.
+    } else if (has_assignment(statement)) {
       assign_variable(variables, statement);
     } else {
       //  Anything else is a "name(arg)" call; the name alone selects the
@@ -237,10 +316,16 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
                 cout << endl;
           }
         }
+      } else if (const string library = providing_library(name); !library.empty()) {
+        if (!enabled.count(library)) {
+          cerr << name << " needs: use \"" << library << "\"" << endl;
+        } else if (name == "clear") {
+          clearScreen();
+        }
       } else if (name == "end") {
         flag = true;
         stop = true;
-      } else if (name == "use") {
+      } else if (name == "pass") {
         const string target = between(arg, '"', '"');
 
         if (active.count(canonical_path(target))) {
@@ -273,19 +358,13 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
           }
         }
       }
+      
 
       else {
         cerr << "Unknown function: " << name << endl;
       }
     }
 
-    if (verbose) {
-      for (size_t j = 0; j < tokens.size(); j++) {
-        cout << tokens[j];
-        if (j + 1 < tokens.size()) cout << " ";
-      }
-      cout << endl;
-    }
   }
 
   active.erase(self);

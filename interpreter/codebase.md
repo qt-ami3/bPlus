@@ -10,10 +10,10 @@ Interpreter core. Everything below lives here, ordered as it appears in the file
   Prints CLI usage to stderr.
 
 - `int main(int argc, char* argv[])`
-  1. **CLI checks** — argument count, the `-v`/`-verbose` flag, that the file opens, the `.bp` extension. Any failure prints usage or a one-line reason and exits `1`.
-  2. **Validation and count pass** — reads the file line by line (respecting `"..."` literals), recording every `;` position to count `semicolon_count` / `statement_count` (equal on a valid file) and to collect missing/extra semicolon errors. If any were collected they are all printed and main exits `1` before execution.
-  3. **Statement pass** — for `i` in `0..semicolon_count`, calls `read_until(filename, ';', 1, i)` to fetch statement `i` (reopens and re-reads the file each time) and trims it. A statement containing `=` goes to `assign_variable`; otherwise the text before the first `(` is the instruction name and `between(statement, '(', ')')` is the argument, dispatched by name to `shout`, to `break`, or to `Unknown function: <name>`. A statement with no `(` reports `Not a statement: <statement>`. See `architecture.md` for the full branch behavior.
-  4. With `-v`, echoes each statement's `split_multi` tokens after it runs, then dumps every statement text again and both counts at the end.
+  1. **CLI checks** — argument count, the `-v`/`-verbose` flag, that the file opens, the `.bp` extension. Any failure prints usage or a one-line reason and exits `1`. These are the only paths that exit non-zero.
+  2. **Pass loop** — `while (!instruction_loop_break)`, repeating until an `end` instruction sets the flag. Each turn calls `validate_and_count` for a fresh statement list, then builds a new `map<string, Variable>` and `set<string> active` and calls `instruction_loop`. Re-reading each pass is what makes editing a running program take effect; rebuilding the map is what makes a pass behave like a first run.
+  3. **Validation failure** — errors are printed once and the loop `continue`s, holding and re-reading until the file is valid. A `reported` copy suppresses reprinting an unchanged error set, which would otherwise flood stderr thousands of times a second.
+  4. With `-v`, prints a "Statements read;" dump from the statement list plus the final pass's counts, after the loop ends.
 
 ## include/ and src/
 
@@ -38,7 +38,7 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   Splits on any character in `delimiters`, dropping empty tokens. Used for verbose token echo, for `assign_variable`'s `[type] name` split, and by main for the `();` delimiter set.
 
 - `std::string read_until(const std::string& filename, char stop_char, int count, int skip)` — read_until.h / read_until.cpp
-  Reopens `filename` from the start, discards content through the first `skip` occurrences of `stop_char`, then returns everything through the next `count` occurrences (stop character included). Called once per statement by main's statement pass — the source of the two-pass, file-reopening read described in `architecture.md`.
+  Reopens `filename` from the start, discards content through the first `skip` occurrences of `stop_char`, then returns everything through the next `count` occurrences (stop character included). **No longer called by anything.** Statements have been read once per pass into a list since 0.6.0; this was the per-statement re-read that made execution quadratic in file length. Left in place, not deleted.
 
 - `variable.h` / `variable.cpp` — runtime variable representation.
   - `enum class VarType { Int, Long, Float, String, Bool }`
@@ -54,14 +54,46 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   - `std::optional<VarValue> infer_literal(const std::string& literal, VarType& out_type)` — infers a type from the literal's shape and parses it: quoted → String, `true`/`false` → Bool, contains `.` → Float, else tries Int then Long. Writes the inferred type to `out_type` on success.
 
 - `std::optional<VarValue> eval_expr(const std::string& expr, const std::map<std::string, Variable>& variables)` — eval_expr.h / eval_expr.cpp
-  Evaluates a `+ - * /` expression with standard precedence, parentheses and unary minus. Operands are numeric literals or variable names resolved from `variables` (bool → 1/0). Returns `nullopt` in three distinct situations, which callers treat alike: the text contains no operator (a bare literal or lone variable, left for the caller), the text is not an expression at all (an illegal character such as `"` aborts tokenizing), or evaluation failed for a semantic reason — `Unknown variable in expression: ...`, `Cannot use string in expression`, `Division by zero`, each reported to stderr here. Result type: Float if any operand was Float or the result is fractional, else Int, else Long beyond `int` range. Internals (`Token`, `Value`, `Parser`) are file-local to eval_expr.cpp.
+  Evaluates a `+ - * /` expression with standard precedence, parentheses and unary minus, and resolves array elements. Operands are numeric literals, variable names, or `arr[index]` where the index is itself an expression — all resolved from `variables` (bool → 1/0). Returns `nullopt` in three distinct situations, which callers treat alike: the text contains neither an operator nor a bracket (a bare literal or lone variable, left for the caller), the text is not an expression at all (an illegal character such as `"` aborts tokenizing), or evaluation failed for a semantic reason — `Unknown variable in expression: ...`, `Index out of range: ...`, `Cannot use string in expression`, `Division by zero`, each reported to stderr here. Result type: Float if any operand was Float or the result is fractional, else Int, else Long beyond `int` range.
+
+  Two things exist for arrays. A bracket makes the evaluator engage even with no operator, because `arr[i]` cannot be looked up by name until `i` is known. And a **lone element** — the whole expression being one `arr[...]` — is answered straight from the map before the arithmetic starts, returning the stored value unchanged; without that a string element would be rejected as not a number, and a whole number would round trip through `double`. Internals (`Token`, `Value`, `Parser`) are file-local to eval_expr.cpp.
 
 - `void assign_variable(std::map<std::string, Variable>& variables, const std::string& statement)` — assign.h / assign.cpp
   Parses `name = value;` or `type name = value;` and applies it to `variables`. A type prefix always (re)declares the variable as static with that type (type error on mismatch). A bare name reassigns an existing static variable (type-checked against its stored type) or, for a new/dynamic name, tries `eval_expr` on the right-hand side first and falls back to `infer_literal`. **`eval_expr` is only reached on the dynamic path**: both the declared-type branch and the existing-static branch go straight to `parse_literal_as`, which requires a whole-string literal match, so `int n = 1 + 2;` and a later `n = 2 + 3;` are both type errors. Expressions in assignments therefore only work on dynamically typed variables. Errors (`Unknown type: ...`, `Invalid variable declaration: ...`, `Type error: ...`, `Could not infer type for: ...`) go to stderr; the function returns without modifying `variables` in that case.
 
+- `bool validate_and_count(const std::string& filename, std::vector<std::string>& statements, int& statement_count, int& semicolon_count, std::vector<std::string>& errors)` — validate.h / validate.cpp
+  Reads `filename` into `statements`, one entry per non-empty line: a `;`-terminated statement, a block header ending in `{`, a lone `}`, or a `use "library"` declaration. Counts semicolons and braces outside `"..."` literals and tracks brace depth. Fills `errors` and returns false for `Missing ';'`, `Extra ';'`, `Braces belong on a line of their own`, `Unmatched '}'` and `Unclosed '{'`. Braces on a line **with** a `;` are data, not a block, which is what makes `arr[3] = {1,2,3};` legal; a block keyword whose braces share its line is still refused so it says why. `in_string` is declared outside the line loop, so an unterminated `"` carries into following lines. Called once per pass by main, and again per file `pass` pulls in.
+
+- `void instruction_loop(bool& flag, const std::string& filename, const std::vector<std::string>& statements, std::map<std::string, Variable>& variables, bool verbose, std::set<std::string>& active)` — instruction_loop.h / instruction_loop.cpp
+  Walks the statement list, executing as it goes. Holds every built-in and all statement classification. Recursive: the `pass` arm calls it again for another file with the same `variables`. File-local helpers:
+  - `canonical_path` — `filesystem::weakly_canonical`, so `"x.bp"` and `"./x.bp"` compare equal in `active` and a cycle cannot slip through.
+  - `has_assignment` — a lone `=` outside quotes, skipping `==`, `!=`, `<=`, `>=`. Without it every condition would look like an assignment.
+  - `resolve_operand` — quoted string, then `eval_expr`, then variable lookup, then `infer_literal`.
+  - `as_number`, `find_comparison`, `evaluate_condition` — condition support; numbers compare as `double`, strings as text, a mismatch sets `ok` false and the caller reports `Bad condition:`.
+  - `matching_close` — index of the `}` closing a block, by depth counting, so skipping a false block skips nested blocks whole.
+  - `libraries`, `providing_library` — the registry of C++ libraries and their instructions; `use "name"` fills a local `enabled` set and an instruction is refused unless its library is in it.
+  - `scan_libraries` — pre-pass writing a bool per `pass` target, named after the file's stem, recording whether it exists.
+
+- `array.h` / `array.cpp` — arrays.
+  - `std::string array_element(const std::string& name, long long index)` — the mangled name of a slot, `arr[0]`.
+  - `std::string array_header(const std::string& name)` — the mangled name of the declaration, `arr[]`.
+  - `bool array_statement(std::map<std::string, Variable>& variables, const std::string& statement)` — handles `arr[3];`, `int arr[3];`, `arr[3] = {1,2,3};` and `arr[0] = value;`, returning false when the statement is not an array statement so the caller carries on. A `[` **left of the `=`** is what marks one, and a `(` in the same span rules it out, so `shout(arr[0]);` is left alone. Declaring writes a zero of the element type into every slot. Static arrays type-check through `parse_literal_as`, so they reject expressions exactly as static scalars do. Errors: `Index out of range:`, `Unknown array:`, `Bad array length:`, `Unknown type:`, `Invalid array declaration:`, `Too many values for ...`.
+
+  Everything lives in the ordinary variable map, so `shout`, conditions and assignment resolve an element without knowing arrays exist. `arr[]` holds the element type in `type`, whether a type was declared in `is_static`, and the length in `value`.
+
+## Outside the core
+
+- `long get_process_ram_kb()` / `void print_system_info(bool enabled)` — process_ram_kb.h / process_ram_kb.cpp
+  Reads `VmRSS` from `/proc/self/status`. `print_system_info` prints `RAM: N KB` and returns immediately when `enabled` is false. Called by main at each end of a pass. Linux specific.
+
+- `void setBufferedInput(bool enable)` / `void clearScreen()` — libraries/shell_utilites.h / libraries/shell_utilites.cpp
+  Terminal helpers, compiled from `src/libraries/`. `clearScreen` writes `\033[2J\033[H` and backs the `clear` instruction. `setBufferedInput` turns off canonical mode and echo so a keypress arrives without Enter; it is **not** exposed to bP yet, and note it restores only on an explicit `setBufferedInput(true)` — an interpreter that exits while unbuffered leaves the user's shell with echo off.
+
 ## unit_tests/
 
 Run with `cd unit_tests && python3 main.py`.
+
+**The suite does not run as of 0.5.0.** No test program contains `end();`, so each one loops forever and the harness blocks on the first case rather than failing it — `subprocess.run` is called without a timeout. Three expectations are stale on top of that: `equals_in_string.bp` records the `shout("a = b");` bug fixed in 0.5.0, and both `break` cases record the old off-by-one counts.
 
 - `bp` — a **copy** of the built `../bp`, not a symlink. Re-copy after rebuilding or the suite tests a stale interpreter.
 - `main.py` — the harness.

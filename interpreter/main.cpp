@@ -15,6 +15,7 @@ using namespace std;
 #include "./include/eval_expr.h"
 #include "./include/validate.h"
 #include "./include/has_extension.h"
+#include "./include/process_ram_kb.h"
 #include "./include/string_contains.h"
 #include "./include/instruction_loop.h"
 
@@ -63,11 +64,16 @@ int main(int argc, char* argv[]) {
 
   bool instruction_loop_break = false;
   while (!instruction_loop_break) {
+    if (verbose) {
+      print_system_info(verbose);
+    }
+
     if (!validate_and_count(filename, statements, statement_count, semicolon_count, errors)) {
       if (errors != reported) {
         for (const string& error : errors) cerr << error << endl;
         reported = errors;
       }
+
       continue;  //  Hold here, re-reading, until the file is valid again.
     }
     reported.clear();
@@ -75,6 +81,11 @@ int main(int argc, char* argv[]) {
     map<string, Variable> variables;  //  Each pass starts from a clean state.
     set<string> active;               //  Files being run, so `use` can refuse a cycle.
     instruction_loop(instruction_loop_break, filename, statements, variables, verbose, active);
+
+
+    if (verbose) {
+      print_system_info(verbose);
+    }
   }
 
   if (verbose) {

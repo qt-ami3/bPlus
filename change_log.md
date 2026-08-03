@@ -183,7 +183,7 @@ Known issues:
 - Statement reading is unchanged
     read_until still reopens the source file and re-reads it from the start once per statement, so execution is still quadratic in file length. The dispatch cost was never the bottleneck here; this is.
 
-## Latest: Control flow, files that repeat, and a program that never stops reading itself (0.5.0)
+## Control flow, files that repeat, and a program that never stops reading itself (0.5.0)
 
 This is the release where bP stops being a list of instructions and starts being able to decide things. `if` blocks are in, with real conditions. The interpreter also re-reads its source file continuously now, so editing a running program changes what it does without restarting it, and `use` pulls in another file while sharing every variable with it.
 
@@ -266,3 +266,122 @@ Known issues:
 
 - shout still prints nothing for a bare literal
     `shout(5);` and `shout(true);` print nothing; `shout(5 + 0);` prints 5. Expression evaluation only engages when there is an operator, and shout has no fallback to plain literal parsing after that.
+
+## Latest: Arrays, and libraries written in C++ (0.6.0)
+
+Arrays are in, which is the first time bP can hold more than one thing under one name. They work the way you would expect from C: `arr[3];` to make one, `arr[0]` to reach a slot, and the number in the brackets can be worked out rather than written down, so `nums[i + 1]` does what it looks like.
+
+The other half of this release is that libraries can now be written in C++ and sit outside the core interpreter, in src/libraries. `use "shell_utilites"` declares one and unlocks its instructions. This is the first step towards the standard library being something I add to rather than something baked into the statement loop.
+
+One rename to be aware of before anything else: the instruction that runs another bP file is now **pass**, not use. `use` means the C++ library declaration. Any program written against 0.5.0 needs `use("file.bp")` changed to `pass("file.bp")`.
+
+Added:
+
+- Arrays
+    Declared with a length, dynamic or with a type in front, and optionally filled on the spot. Every slot starts at a zero of its type, so a new array can be read straight away. Slots count from 0.
+
+```
+arr[3];
+int scores[3];
+nums[3] = {1,2,3};
+string words[2] = {"hi","there"};
+
+arr[0] = 7;
+shout(arr[0]);
+```
+
+    The index can be a variable or a sum, and a slot works anywhere a variable does, including in expressions and conditions.
+
+```
+i = 2;
+shout(nums[i]);
+shout(nums[i + 1]);
+x = nums[0] + nums[1];
+if (nums[3] > 35) {
+  shout("high");
+}
+```
+
+    Typing follows ordinary variables: `arr[3];` takes anything per slot, `int scores[3];` refuses anything that is not an int. Reaching past the end reports `Index out of range:` and carries on. A slot of an array that was never declared reports `Unknown array:`.
+
+- use "library"
+    Declares a library compiled into the interpreter from src/libraries, making its instructions callable. No brackets and no semicolon, which is a shape nothing else in the language has.
+
+```
+use "shell_utilites"
+clear();
+end();
+```
+
+    Without the declaration the instruction refuses to run and says what is missing: `clear needs: use "shell_utilites"`. An unknown name reports `Unknown library:`. The declaration counts only for the file it is written in, and has to come before the instructions it enables.
+
+- clear
+    Empties the screen. Comes from shell_utilites.
+
+- src/libraries and include/libraries
+    Where a library lives. Dropping a .cpp and a header in needs no build change.
+
+- Makefile
+    `make` builds, `make clean` removes the binary. The point of it is that neither `-std=c++17` nor the libraries directory can be left off by accident, which had already happened twice by hand.
+
+- Library presence check
+    Before a file runs, every file named in a `pass` is looked for on disk and a true/false variable named after it records whether it is there. `pass("helper.bp")` sets `helper`, so a program can check before committing to a file that would otherwise make it wait forever.
+
+```
+if (helper) {
+  pass("helper.bp");
+}
+```
+
+- Memory readout
+    With -v, the interpreter's own memory use is printed at the start and end of every pass.
+
+- include/array.h, src/array.cpp
+- include/validate.h, src/validate.cpp
+- include/process_ram_kb.h, src/process_ram_kb.cpp
+- include/libraries/shell_utilites.h, src/libraries/shell_utilites.cpp
+
+Changes:
+
+- use is now pass
+    The instruction that runs another bP file repeatedly was renamed to make room for the library declaration. Behaviour is unchanged. Its cycle error still prints `Cyclic use:`, which was missed in the rename.
+
+- Braces mean a block only on a line without a semicolon
+    Needed so `arr[3] = {1,2,3};` reads as data. A line ending in `{` is still a block, a lone `}` still closes one, and `if (x) { shout("a"); }` on one line is still refused with `Braces belong on a line of their own`.
+
+- eval_expr understands brackets
+    `[` and `]` are tokens now, an indexed name resolves to a slot, and the evaluator engages on a bracket as well as on an operator — without that, `arr[i]` with a variable index could not be resolved by name. A lone slot is answered straight from storage rather than through the arithmetic, so a string slot is not rejected for not being a number.
+
+- Verbose output is readable
+    Each statement is numbered and printed before it runs rather than after, so what it prints appears underneath its own line instead of running into it. Blocks are traced too, and a skipped block shows as a gap in the numbering.
+
+- bP_user_guide.md, interpreter/compile.md, interpreter/architecture.md
+    Updated for all of the above.
+
+Fixes:
+
+- Statements and their output no longer collide under -v
+    shout writes no trailing newline, so the old trace printed `17993shout x`. Each trace line now starts on a fresh line.
+
+- src/libraries/shell_utilites.cpp did not compile
+    Missing `<unistd.h>`, `<iostream>` and `<cstdlib>`.
+
+- src/process_ram_kb.cpp called sscanf without `<cstdio>`
+    It compiled only because another header happened to pull it in.
+
+Known issues:
+
+- Arrays cannot be printed whole
+    `shout(arr);` prints nothing. Print the slots one at a time. There is no length instruction either, though the length is stored.
+
+- A static array will not take a sum in a slot
+    `int t[2]; t[0] = 1 + 1;` is a type error, the same restriction static variables have had since 0.4.2. Dynamic arrays take them fine.
+
+- Declaring an array again empties it
+    The length is fixed at declaration, and re-declaring resets every slot.
+
+- A library declaration does not cross a pass
+    A file reached by `pass` has to declare `use "library"` again for itself.
+
+- Cyclic use:
+    The cycle message still names an instruction that no longer exists.

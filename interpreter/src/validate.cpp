@@ -60,7 +60,25 @@ bool validate_and_count(const string& filename, vector<string>& statements,
       continue;
     }
 
-    if (opens > 0 || closes > 0) {
+    //  `use "library"` is a declaration rather than a statement: it names a
+    //  library compiled in from src/libraries and carries no ';'.
+    if (statement.rfind("use ", 0) == 0 || statement.rfind("use\t", 0) == 0) {
+      statements.push_back(statement);
+      continue;
+    }
+
+    //  Braces only mean a block on a line without a ';'. On a statement line
+    //  they are data, as in an array initialiser: arr[3] = {1,2,3};
+    if (semicolons.empty() && (opens > 0 || closes > 0)) {
+      errors.push_back("Braces belong on a line of their own, line " + to_string(line_number)
+        + ": " + statement);
+      continue;
+    }
+
+    //  A block keyword whose braces sit on its own line: without this the
+    //  allowance above lets `if (x) { shout("a"); }` through as a statement,
+    //  and it fails later as an unknown instruction instead of saying why.
+    if (opens > 0 && trim(statement.substr(0, statement.find('('))) == "if") {
       errors.push_back("Braces belong on a line of their own, line " + to_string(line_number)
         + ": " + statement);
       continue;

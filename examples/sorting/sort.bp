@@ -1,0 +1,16 @@
+if (arr[i] > arr[i + 1]) {
+  temp = arr[i];
+  arr[i] = arr[i + 1];
+  arr[i + 1] = temp;
+  swapped = true;
+}
+
+i = i + 1;
+
+if (i > last) {
+  if (swapped == false) {
+    end();
+  }
+  i = 0;
+  swapped = false;
+}

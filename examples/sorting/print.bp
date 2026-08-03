@@ -1,0 +1,6 @@
+shout(arr[j]);
+shout(" ");
+j = j + 1;
+if (j > end_slot) {
+  end();
+}
