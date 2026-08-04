@@ -386,4 +386,108 @@ Known issues:
 - Cyclic use:
     The cycle message still names an instruction that no longer exists.
 
-## Latest: exec() function implemented into shell_utilities library 0.7.0
+## exec() function implemented into shell_utilities library (0.7.0)
+
+Added:
+
+- exec
+    Runs a shell command. Takes a string literal or a variable holding one, so a program can build the command up before running it. A non-zero exit from the shell reports `exec failed:` and carries on.
+
+```
+use "shell_utilities"
+exec("ls");
+command = "echo hi";
+exec(command);
+```
+
+    This is a large jump in what a bP program can do: anything it can put in a string, it can now run. It is gated behind `use "shell_utilities"` like everything else in that library.
+
+Changes:
+
+- shell_utilites is now shell_utilities
+    It was misspelled everywhere, including the registry key, which is the name a .bp file has to type. `use "shell_utilites"` now reports `Unknown library:`.
+
+- clearScreen is now clear_screen, setBufferedInput is now set_buffered_input
+    Matching the snake_case the rest of the codebase uses.
+
+- interpreter/include/shell_utilities.h removed
+    A half-finished duplicate of the library header, sitting in include/ root instead of include/libraries/, with `#prama once` and two declarations missing semicolons. Nothing included it and it would not have compiled if anything had.
+
+## Latest: Multiple arguments, logical operators, and a random library (0.8.0)
+
+Brackets can hold more than one thing now. `shout("hi ", name, "!")` prints all three parts, which finally undoes the single-argument regression that has been sat in the known issues since 0.3.0, and conditions take `&&` and `||` so you can ask two things at once instead of nesting an `if` inside an `if`.
+
+Underneath both of those is a smaller fix that was overdue: an argument is now read to the bracket that *matches* the opening one, rather than to the first `)` in the line. That was the reason `shout((2 + 3) * 4);` printed nothing and `if ((a + b) > 5)` reported a bad condition — the argument was being cut in half before anything looked at it.
+
+There is also a random library, which is the second library after shell_utilities and the first one that needed multiple arguments to be usable at all.
+
+Added:
+
+- Multiple arguments, separated by commas
+    Every part is printed in turn with nothing between them, so spacing goes inside the literals. Parts can be literals, variables, expressions or array slots.
+
+```
+shout("hi ", name, "!");
+shout("dice: ", a, " ", b, "|");
+shout(1 + 2, "-", 3 * 4);
+```
+
+- && and || in conditions
+    `||` binds loosest, then `&&`, then the comparisons. Brackets group. Both stop as soon as the answer is settled, so an unresolvable term after a decided one is not reported.
+
+```
+if (a > 1 && b < 2) {
+if (a > 100 || b < 2) {
+if ((a > 1 || b > 5) && name == "carl") {
+```
+
+- random library
+    Four instructions. The first argument is the variable to write into, created if it does not exist, because instructions are statements and cannot hand a value back any other way. Bounds may be variables or expressions.
+
+```
+use "random"
+randomint(a, 1, 6);
+randomdouble(d, 0, 1);
+randombool(flag);
+doublebellcurve(g, 100, 15);
+```
+
+    Reversed bounds are swapped rather than left undefined, and a zero deviation returns the mean.
+
+- include/libraries/random.h, src/libraries/random.cpp
+
+Changes:
+
+- between_matching, in the between module
+    Pairs the first bracket with the one that closes it, counting nesting and ignoring brackets inside `"..."`. Argument and condition extraction both use it now. `between` itself is unchanged and still used where the first match is what is wanted.
+
+- split_top_level, in instruction_loop
+    Splits on a separator only outside quotes and outside any bracket. One helper serves commas, `&&` and `||`, which is why `shout("a, b")` stays one argument.
+
+- store_result and numeric_arguments, in instruction_loop
+    Shared by the random instructions: one writes a produced value into a variable and refuses to change a static one's type, the other resolves the arguments after the first as numbers.
+
+Fixes:
+
+- shout is single-argument
+    Fixed. Listed as a regression since 0.3.0. `./examples/dataTypes.bp` should work as written again.
+
+- Brackets inside an argument
+    `shout((2 + 3) * 4);` prints 20 where it used to print nothing, and `if ((a + b) > 5)` evaluates instead of reporting `Bad condition: (a + b`.
+
+- src/libraries/random.cpp did not compile
+    Six problems: no return types, `int result&` written backwards, untyped parameters, `bernoulli_distrobution` and `normal_distrobution` misspelled, `rng` undeclared in two functions, and three functions declaring a local `result` that shadowed the out-parameter — so even once compiling, a caller would never have seen a value. It also built a fresh generator from `random_device` on every call, which is slow and, where `random_device` is not a real entropy source, returns the same number every time.
+
+Known issues:
+
+- No `!`
+    There is no negation. `if (!a)` reports `Bad condition: !a`. Write the opposite comparison instead.
+
+- No `and` / `or` word forms
+    Only `&&` and `||`. `if (a < 2 and b > 1)` reports a bad condition.
+
+- shout still prints nothing for a bare literal
+    `shout(5);` and `shout(true);` print nothing, while `shout(5 + 0);` prints 5. Unchanged by this release: the evaluator only engages on an operator or a bracket, and shout has no fallback to plain literal parsing after that.
+
+- doublebellcurve is an awkward name in bP
+    The `double` refers to the C++ return type, which a bP program never sees. `bell_curve` would read better.

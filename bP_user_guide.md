@@ -47,16 +47,18 @@ Memory use is reported at the start and end of each pass, and the libraries foun
 ## Basic functionality
 
 - shout();
-Prints a single argument to the shell: a string literal, or a variable's value.
+Prints to the shell. Give it as many things as you like, separated by commas, and they are printed one after another:
 
 ```
 shout("hi ");
 shout(name);
+shout("hi ", name, "!");
+shout("dice: ", a, " and ", b);
 ```
 
-Only one argument is supported. `shout("hi ", name, "!");` does **not** print all three parts — see "Known issue: shout is single-argument" below.
+Nothing is put between the parts, so any spaces you want go inside the quotes. Each part can be a string literal, a variable, a sum, or an array slot.
 
-`shout` prints a string literal, a variable, or an expression. A bare number on its own prints nothing: `shout(5);` and `shout(true);` produce no output, while `shout(5 + 0);` prints `5`. Put the value in a variable, or give it an operator.
+A bare number on its own prints nothing: `shout(5);` and `shout(true);` produce no output, while `shout(5 + 0);` prints `5`. Put the value in a variable, or give it a sum to do.
 
 - break();
 Ends the current line. `break()` and `break(1)` print one newline, `break(2)` prints two, `break(0)` prints none. The argument may be a literal integer or a variable.
@@ -123,14 +125,63 @@ Two rules. The `use` line has to come before the instructions it enables, and it
 
 These libraries are written in C++ and live in `interpreter/src/libraries/`, compiled into `bp`. `use` does not load anything while your program runs; it decides what your program is allowed to call.
 
-### Known issue: shout is single-argument
+### The libraries
 
-`shout` no longer joins comma-separated arguments. In practice:
+**shell_utilities**
 
-- `shout("hi ", "there");` prints only `hi ` — everything after the first `"..."` literal is dropped.
-- `shout(name, other);` prints nothing at all.
+- clear();
+Empties the screen.
 
-Older examples in this guide and in `examples/dataTypes.bp` that call `shout` with more than one argument no longer work as written; call `shout` once per value instead.
+- exec("command");
+Runs a shell command. The command can be written out or held in a variable, so a program can build one up before running it:
+
+```
+use "shell_utilities"
+exec("ls");
+command = "echo hi";
+exec(command);
+```
+
+If the command comes back with a failure, that reports `exec failed:` and the program carries on. Anything your program can put in a string it can run, so be as careful with this as you would be typing into the shell yourself.
+
+**random**
+
+- randomint(variable, from, to);
+- randomdouble(variable, from, to);
+- randombool(variable);
+- doublebellcurve(variable, middle, spread);
+
+```
+use "random"
+randomint(die, 1, 6);
+randomdouble(chance, 0, 1);
+randombool(coin);
+doublebellcurve(height, 100, 15);
+shout("rolled ", die);
+break();
+end();
+```
+
+The **first argument is the variable the answer goes into**, not a value coming back — instructions cannot hand a value to the middle of a sum, so they write into a variable instead. The variable does not have to exist first; it is made for you. Everything after the first argument may be a number, a variable or a sum.
+
+`randomint` includes both ends, so `randomint(die, 1, 6)` can give 1 or 6. Writing the bounds the wrong way round is fine, they get swapped. `doublebellcurve` clusters answers around the middle you give it, most of them within one spread either side.
+
+Writing to a variable that was declared with a type it cannot hold is an error:
+
+```
+string s = "text";
+randomint(s, 1, 6);      Type error: s is string, cannot hold int
+```
+
+Giving the wrong number of arguments tells you the shape it wanted:
+
+```
+randomint(a, 1);         randomint needs 3 argument(s): randomint(variable, from, to)
+```
+
+### Fixed: shout is multi-argument again
+
+From 0.3.0 to 0.7.0 `shout` dropped everything after its first argument, so `shout("hi ", "there");` printed only `hi `. That is fixed. Older examples that pass several things to one `shout`, including `examples/dataTypes.bp`, work as written again.
 
 ## Making decisions
 
@@ -155,6 +206,16 @@ if (x + 1 < y * 2) {
 ```
 
 Two strings compare as text, so `if (name == "carl")` and `if (name != "bob")` both work. Comparing text against a number is not meaningful and reports `Bad condition:`.
+
+Ask two things at once with `&&` (both must hold) and `||` (either will do). Brackets group them:
+
+```
+if (a > 1 && b < 2) {
+if (a > 100 || b < 2) {
+if ((a > 1 || b > 5) && name == "carl") {
+```
+
+`||` is considered last, so `a && b || c` means "a and b, or else c". There is no `not`: write the opposite comparison instead. The words `and` and `or` are not accepted, only the symbols.
 
 A condition with no operator is true when the value is not zero, not `false`, and not an empty string:
 
@@ -181,7 +242,7 @@ Writing it on one line reports `Braces belong on a line of their own`. Leaving a
 
 There is no `else` yet. Write the opposite condition as a second `if`.
 
-Conditions cannot contain brackets of their own: `if ((a + b) > 5)` reports `Bad condition:`, because the condition is read as the text between the first `(` and the first `)`. Work it out into a variable first.
+Conditions may contain brackets of their own: `if ((a + b) > 5)` works, and so does grouping with `&&` and `||`.
 
 ## Variables
 

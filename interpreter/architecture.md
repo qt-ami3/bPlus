@@ -18,7 +18,7 @@ main.cpp             CLI handling and the pass loop, nothing else.
 └─ unit_tests/       Python harness plus one .bp program per test case.
 ```
 
-Core modules (header + impl pair each): `has_extension`, `trim`, `string_contains`, `between`, `split`, `read_until`, `variable`, `parse_literal`, `assign`, `eval_expr`, `validate`, `array`, `instruction_loop`. Outside the core: `process_ram_kb` (memory readout for `-v`) and `libraries/shell_utilities` (`clear_screen`, `set_buffered_input`). `main.cpp` is down to CLI handling and the re-read loop; the statement loop and every built-in live in `instruction_loop`, file reading and checking in `validate`, and array declaration and element assignment in `array`.
+Core modules (header + impl pair each): `has_extension`, `trim`, `string_contains`, `between`, `split`, `read_until`, `variable`, `parse_literal`, `assign`, `eval_expr`, `validate`, `array`, `instruction_loop`. Outside the core: `process_ram_kb` (memory readout for `-v`), `libraries/shell_utilities` (`clear_screen`, `set_buffered_input`) and `libraries/random` (four generators sharing one seeded `mt19937`). `main.cpp` is down to CLI handling and the re-read loop; the statement loop and every built-in live in `instruction_loop`, file reading and checking in `validate`, and array declaration and element assignment in `array`.
 
 `read_until` is no longer called by anything. It is left in place, not deleted.
 
@@ -43,7 +43,7 @@ Core modules (header + impl pair each): `has_extension`, `trim`, `string_contain
    - `}` — block end, nothing to do.
    - ends with `{` — a block header. The text before the first `(` is the keyword. `if` evaluates its condition; if false (or unresolvable) `i` jumps to the index of the matching `}` found by `matching_close()`, so nested blocks inside a skipped block are skipped whole. Any other keyword reports `Unknown block:` and skips likewise.
    - `has_assignment()` true — a lone `=` outside quotes, ignoring `==`, `!=`, `<=`, `>=`. Goes to `assign_variable()`. This distinction is what lets a condition contain `==` without being mistaken for an assignment.
-   - otherwise a call — text before the first `(` is the **instruction name**, `between(statement, '(', ')')` the argument, matched in one `if`/`else if` chain. A statement with no `(` reports `Not a statement:`.
+   - otherwise a call — text before the first `(` is the **instruction name**, `between_matching(statement, '(', ')')` the argument, matched in one `if`/`else if` chain. A statement with no `(` reports `Not a statement:`. Matching rather than first-`)` extraction is what lets an argument hold brackets of its own; instructions that take several arguments split what comes back with `split_top_level(arg, ",")`.
 
    The built-ins:
    - `shout` — argument containing `"` prints the text between the first two quotes; otherwise `eval_expr()`, and on `nullopt` a variable lookup. A bare literal resolves to neither, so it prints nothing.
@@ -87,13 +87,16 @@ A target that fails validation reports its errors once and the repeat holds, re-
 
 ```
 static const map<string, set<string>> libraries = {
-  {"shell_utilities", {"clear"}},
+  {"shell_utilities", {"clear", "exec"}},
+  {"random", {"randomint", "randomdouble", "randombool", "doublebellcurve"}},
 };
 ```
 
 `use "library"` — no parentheses, no semicolon — inserts a name into a `set<string> enabled` local to `instruction_loop`. `providing_library(name)` finds the owner of an instruction, and the dispatch arm refuses it unless the file declared it, reporting `clear needs: use "shell_utilities"`. Being local to the call means the declaration does **not** cross a `pass`; each file declares for itself.
 
 Nothing is loaded at runtime — the C++ is already linked in. `use` decides what a program is allowed to call. Adding an instruction is a name in the registry set plus an arm in the dispatch; the refusal message comes free.
+
+An instruction cannot return a value, because the dispatch executes statements and hands nothing back to an expression. A library function that computes something therefore takes the **variable to write into as its first argument** — `randomint(a, 1, 6);` sets `a`. Two helpers support that shape: `store_result()` writes a produced value into a name, creating it if new and refusing to change a static variable's type, and `numeric_arguments()` resolves everything after the first argument as numbers. Anything shaped like a function that belongs in an expression would need `eval_expr` to resolve a call, the same way it now resolves an index.
 
 ## Data structures
 
@@ -106,10 +109,10 @@ Nothing is loaded at runtime — the C++ is already linked in. `use` decides wha
 
 - **Variables**: `name = value;` infers a type from the literal (quoted → String, `true`/`false` → Bool, contains `.` → Float, else Int then Long) and declares dynamically. `type name = value;` (`int`, `long`, `float`/`double`, `string`, `bool`) declares statically; a value of the wrong type errors, at declaration and on every reassignment.
 - **Expressions**: `+ - * /` with standard precedence, parentheses and unary minus, over numeric literals and variable names. Available on the right of an assignment and as a `shout` argument. Division is real division: the result is Float when any operand was Float or the result is fractional, otherwise Int, or Long when it exceeds `int` range. Bools resolve to 1/0; a string in an expression is an error. `eval_expr` returns `nullopt` when the text holds neither an operator nor a bracket, which is how a bare literal or lone variable name falls through to the caller's own handling. A bracket counts because `arr[i]` has no operator but still cannot be looked up by name until `i` is known. A lone element is answered directly from the map before arithmetic starts, so a string element is returned whole rather than rejected as not a number, and a whole number avoids a round trip through `double`. Note that assignment only evaluates expressions for **dynamically typed** variables — a static declaration or a static reassignment parses its right-hand side as a whole-string literal, so `int n = 1 + 2;` is a type error.
-- **shout**: effectively single-argument in the current code — see `../bP_user_guide.md` and the "Regressions" entry in `../change_log.md` (0.3.0). Only the first quoted literal in the call is printed, or one expression, or one variable resolved by name; comma-separated multi-argument calls do not work. Because `between()` stops at the *first* `)`, a nested-parenthesis argument such as `shout((2 + 3) * 4);` is truncated to `(2 + 3` and prints nothing.
+- **shout**: takes any number of comma-separated arguments, printed in turn with nothing between them, so spacing lives inside the literals. Each argument is a quoted literal, an expression, an array slot or a variable name, resolved independently. A bare number is still the one gap — `shout(5);` prints nothing, because the evaluator only engages on an operator or a bracket and there is no fallback to plain literal parsing. Arguments split on commas at bracket depth zero and outside quotes, so `shout("a, b")` is one argument.
 - **break**: prints exactly what it is asked for. `break()` and `break(1)` print one newline, `break(2)` two, `break(0)` none. The 0.3.0–0.4.3 off-by-one is gone.
 - **Blocks**: one statement per line still holds, and braces extend it rather than replacing it — an opening brace ends its line, a closing brace has a line to itself, and neither carries a `;`. `if (x) { shout("a"); }` is rejected rather than parsed. This is what keeps the reader line-based.
-- **Conditions**: `==`, `!=`, `<`, `>`, `<=`, `>=`, or a lone operand tested for truthiness (non-zero, not `false`, not empty text). Operands may be expressions, variables, literals or quoted strings. `between()` still stops at the first `)`, so a condition containing its own brackets — `if ((a + b) > 5)` — is truncated and reports `Bad condition:`. It fails loudly, unlike the `shout` equivalent which prints nothing.
+- **Conditions**: `&&` and `||`, then `==`, `!=`, `<`, `>`, `<=`, `>=`, or a lone operand tested for truthiness (non-zero, not `false`, not empty text). `||` binds loosest, `&&` next, comparisons tightest, and brackets group — `if ((a > 1 || b > 5) && name == "carl")`. Both operators stop as soon as the answer is settled, so an unresolvable term after a decided one is never reported. Operands may be expressions, variables, literals, array slots or quoted strings. There is no `!`, and no `and`/`or` word forms.
 - **end / pass**: `end` stops the file it is written in. `pass` repeats a file until that file's own `end`, sharing all variables. See "Files that run files".
 - **Arrays**: `arr[3];` declares, `int arr[3];` fixes the element type, `arr[3] = {1,2,3};` fills. Elements are stored in the ordinary variable map under mangled names — `arr[0]`, `arr[1]` — with `arr[]` holding the declaration: element type in `type`, whether a type was given in `is_static`, length in `value`. Declaring writes a zero of the element type into every slot, so an unset slot reads as 0 rather than as a missing variable, and every existing lookup path resolves an element without knowing arrays exist. Indices may be expressions. Out of range reports `Index out of range:`, an undeclared name `Unknown array:`. There is no whole-array printing and no length instruction, though the length is stored.
 

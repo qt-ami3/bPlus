@@ -16,12 +16,13 @@ using namespace std;
 #include "../include/assign.h"
 #include "../include/between.h"
 #include "../include/variable.h"
-#include "../include/eval_expr.h"
 #include "../include/validate.h"
+#include "../include/eval_expr.h"
 #include "../include/parse_literal.h"
-#include "../include/string_contains.h"
 #include "../include/process_ram_kb.h"
+#include "../include/string_contains.h"
 #include "../include/instruction_loop.h"
+#include "../include/libraries/random.h"
 #include "../include/libraries/shell_utilities.h"
 
 //  Two spellings of one path ("x.bp", "./x.bp") must compare equal or a cycle
@@ -48,6 +49,35 @@ static bool has_assignment(const string& statement) {
     return true;
   }
   return false;
+}
+
+//  Splits on `separator` only where it sits outside quotes and outside any
+//  bracket, so `shout("a, b", f(1, 2))` is two arguments and `a && (b && c)`
+//  is two factors. Always returns at least one part.
+static vector<string> split_top_level(const string& text, const string& separator) {
+  vector<string> parts;
+  bool in_string = false;
+  int depth = 0;
+  size_t start = 0;
+
+  for (size_t i = 0; i < text.size(); i++) {
+    const char c = text[i];
+    if (c == '"') { in_string = !in_string; continue; }
+    if (in_string) continue;
+
+    if (c == '(' || c == '[') { depth++; continue; }
+    if (c == ')' || c == ']') { depth--; continue; }
+    if (depth != 0) continue;
+
+    if (text.compare(i, separator.size(), separator) == 0) {
+      parts.push_back(text.substr(start, i - start));
+      i += separator.size() - 1;
+      start = i + 1;
+    }
+  }
+
+  parts.push_back(text.substr(start));
+  return parts;
 }
 
 //  A condition operand: a quoted string, an expression, a variable, or a literal.
@@ -116,6 +146,30 @@ static bool evaluate_condition(const string& condition,
   size_t pos = 0;
   size_t length = 0;
 
+  //  `||` binds loosest, then `&&`, then the comparisons below. Both stop early
+  //  once the answer is settled, so a later unresolvable term is not reported.
+  const vector<string> any = split_top_level(condition, "||");
+  if (any.size() > 1) {
+    for (const string& term : any) {
+      if (evaluate_condition(term, variables, ok)) return true;
+      if (!ok) return false;
+    }
+    return false;
+  }
+
+  const vector<string> all = split_top_level(condition, "&&");
+  if (all.size() > 1) {
+    for (const string& term : all) {
+      if (!evaluate_condition(term, variables, ok) || !ok) return false;
+    }
+    return true;
+  }
+
+  //  A term wrapped in its own brackets: (a > 1) && (b < 2).
+  const string bare = trim(condition);
+  if (!bare.empty() && bare.front() == '(' && between_matching(bare, '(', ')').size() + 2 == bare.size())
+    return evaluate_condition(between_matching(bare, '(', ')'), variables, ok);
+
   if (!find_comparison(condition, pos, length)) {  //  if (flag) / if (count)
     auto operand = resolve_operand(condition, variables);
     if (!operand) { ok = false; return false; }
@@ -155,11 +209,48 @@ static bool evaluate_condition(const string& condition,
   return a >= b;
 }
 
+//  Writes a value a library instruction produced into `name`, creating the
+//  variable if it is new and refusing to change a static one's type.
+static void store_result(map<string, Variable>& variables, const string& name,
+                         VarType type, const VarValue& value) {
+  auto it = variables.find(name);
+
+  if (it != variables.end() && it->second.is_static) {
+    if (it->second.type != type) {
+      cerr << "Type error: " << name << " is " << var_type_name(it->second.type)
+        << ", cannot hold " << var_type_name(type) << endl;
+      return;
+    }
+    it->second.value = value;
+    return;
+  }
+
+  variables[name] = {type, false, value};
+}
+
+//  Resolves every argument after the first as a number, for library
+//  instructions shaped `name(variable, a, b)`. False if any will not resolve.
+static bool numeric_arguments(const vector<string>& arguments,
+                              const map<string, Variable>& variables,
+                              vector<double>& out) {
+  for (size_t i = 1; i < arguments.size(); i++) {
+    auto operand = resolve_operand(arguments[i], variables);
+    if (!operand) return false;
+
+    auto number = as_number(*operand);
+    if (!number) return false;
+
+    out.push_back(*number);
+  }
+  return true;
+}
+
 //  Libraries compiled in from src/libraries, and the instructions each one
 //  brings. `use "name"` makes a library's instructions callable; without it
 //  they stay refused, so a program has to declare what it depends on.
 static const map<string, set<string>> libraries = {
   {"shell_utilities", {"clear", "exec"}},
+  {"random", {"randomint", "randomdouble", "randombool", "doublebellcurve"}},
 };
 
 //  system() takes a C string and is marked warn_unused_result, so both call
@@ -270,7 +361,7 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
       const string keyword = trim(header.substr(0, paren));
 
       if (keyword == "if") {
-        const string condition = between(header, '(', ')');
+        const string condition = between_matching(header, '(', ')');
         bool ok = true;
         const bool met = evaluate_condition(condition, variables, ok);
 
@@ -298,16 +389,22 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
       }
 
       const string name = trim(statement.substr(0, paren));
-      const string arg = between(statement, '(', ')');
+      const string arg = between_matching(statement, '(', ')');
 
       if (name == "shout") {
-        if (string_contains(arg, "\"")) {             // shout("text");
-          cout << between(arg, '"', '"');
-        } else if (auto value = eval_expr(arg, variables)) {  // shout(1 + 2);
-          print_variable(Variable{VarType::Int, false, *value});
-        } else {                                      // shout(z);
-          auto it = variables.find(arg);
-          if (it != variables.end()) {print_variable(it->second);}
+        //  Arguments print in turn with nothing between them, so any spacing
+        //  you want goes inside the literals: shout("hi ", name, "!");
+        for (const string& part : split_top_level(arg, ",")) {
+          const string piece = trim(part);
+
+          if (string_contains(piece, "\"")) {           // shout("text");
+            cout << between(piece, '"', '"');
+          } else if (auto value = eval_expr(piece, variables)) {  // shout(1 + 2);
+            print_variable(Variable{VarType::Int, false, *value});
+          } else {                                    // shout(z);
+            auto it = variables.find(piece);
+            if (it != variables.end()) {print_variable(it->second);}
+          }
         }
       } else if (name == "break") {
         if (arg.empty()) {
@@ -327,6 +424,38 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
       } else if (const string library = providing_library(name); !library.empty()) {
         if (!enabled.count(library)) {
           cerr << name << " needs: use \"" << library << "\"" << endl;
+        } else if (name == "randomint" || name == "randomdouble"
+          || name == "randombool" || name == "doublebellcurve") {
+          const vector<string> arguments = split_top_level(arg, ",");
+          const size_t wanted = name == "randombool" ? 1 : 3;
+          vector<double> numbers;
+
+          if (arguments.size() != wanted) {
+            cerr << name << " needs " << wanted << " argument(s): "
+              << name << (wanted == 1 ? "(variable)" : "(variable, from, to)") << endl;
+          } else if (!numeric_arguments(arguments, variables, numbers)) {
+            cerr << name << ": could not read its numbers from " << arg << endl;
+          } else {
+            const string target = trim(arguments[0]);
+
+            if (name == "randomint") {
+              int result = 0;
+              randomint(result, static_cast<int>(numbers[0]), static_cast<int>(numbers[1]));
+              store_result(variables, target, VarType::Int, result);
+            } else if (name == "randomdouble") {
+              double result = 0;
+              randomdouble(result, numbers[0], numbers[1]);
+              store_result(variables, target, VarType::Float, result);
+            } else if (name == "randombool") {
+              bool result = false;
+              randombool(result);
+              store_result(variables, target, VarType::Bool, result);
+            } else {
+              double result = 0;
+              doublebellcurve(result, numbers[0], numbers[1]);
+              store_result(variables, target, VarType::Float, result);
+            }
+          }
         } else if (name == "clear") {
           clear_screen();
         } else if (name == "exec") {

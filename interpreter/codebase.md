@@ -29,7 +29,10 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   Thin wrapper over `str.find(needle) != npos`. In main.cpp it now only decides assignment-vs-call (`=`) and whether a `shout` argument is a quoted literal; instruction names are matched by equality, not by substring search.
 
 - `std::string between(const std::string& str, char open, char close)` — between.h / between.cpp
-  Substring strictly between the first `open` and the following `close`, excluding both; `""` if either isn't found. Used to pull `"..."`/`(...)` contents and, in `assign_variable`, the right-hand side between `=` and `;`.
+  Substring strictly between the first `open` and the following `close`, excluding both; `""` if either isn't found. Used to pull `"..."` contents and, in `assign_variable`, the right-hand side between `=` and `;`.
+
+- `std::string between_matching(const std::string& str, char open, char close)` — between.h / between.cpp
+  Same, but pairs the first `open` with the `close` that actually matches it, counting nesting and ignoring both characters inside `"..."` literals. `""` when there is no `open` or nothing closes it. Argument and condition extraction use this, which is what lets an argument carry brackets of its own: `shout((2 + 3) * 4);` and `if ((a + b) > 5)`. Using plain `between` there truncated the argument at the first `)`.
 
 - `std::vector<std::string> split(const std::string& str, char delimiter)` — split.h / split.cpp
   Splits on one character, keeping empty tokens between consecutive delimiters.
@@ -68,8 +71,10 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   Walks the statement list, executing as it goes. Holds every built-in and all statement classification. Recursive: the `pass` arm calls it again for another file with the same `variables`. File-local helpers:
   - `canonical_path` — `filesystem::weakly_canonical`, so `"x.bp"` and `"./x.bp"` compare equal in `active` and a cycle cannot slip through.
   - `has_assignment` — a lone `=` outside quotes, skipping `==`, `!=`, `<=`, `>=`. Without it every condition would look like an assignment.
+  - `split_top_level` — splits on a separator only outside quotes and outside any bracket, so `shout("a, b", f(1, 2))` is two arguments. One helper serves comma-separated arguments, `&&` and `||`.
+  - `store_result`, `numeric_arguments` — support for library instructions shaped `name(variable, a, b)`. The first writes a produced value into a variable, creating it if new and refusing to change a static one's declared type; the second resolves every argument after the first as a number.
   - `resolve_operand` — quoted string, then `eval_expr`, then variable lookup, then `infer_literal`.
-  - `as_number`, `find_comparison`, `evaluate_condition` — condition support; numbers compare as `double`, strings as text, a mismatch sets `ok` false and the caller reports `Bad condition:`.
+  - `as_number`, `find_comparison`, `evaluate_condition` — condition support; numbers compare as `double`, strings as text, a mismatch sets `ok` false and the caller reports `Bad condition:`. `evaluate_condition` splits on `||` then `&&` before anything else and recurses, which is what gives `||` the loosest binding; a term wrapped entirely in its own brackets is unwrapped and recursed into. There is no `!` and no `and`/`or` word forms.
   - `matching_close` — index of the `}` closing a block, by depth counting, so skipping a false block skips nested blocks whole.
   - `libraries`, `providing_library` — the registry of C++ libraries and their instructions; `use "name"` fills a local `enabled` set and an instruction is refused unless its library is in it.
   - `scan_libraries` — pre-pass writing a bool per `pass` target, named after the file's stem, recording whether it exists.
@@ -87,7 +92,15 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   Reads `VmRSS` from `/proc/self/status`. `print_system_info` prints `RAM: N KB` and returns immediately when `enabled` is false. Called by main at each end of a pass. Linux specific.
 
 - `void set_buffered_input(bool enable)` / `void clear_screen()` — libraries/shell_utilities.h / libraries/shell_utilities.cpp
-  Terminal helpers, compiled from `src/libraries/`. `clear_screen` writes `\033[2J\033[H` and backs the `clear` instruction. `set_buffered_input` turns off canonical mode and echo so a keypress arrives without Enter; it is **not** exposed to bP yet, and note it restores only on an explicit `set_buffered_input(true)` — an interpreter that exits while unbuffered leaves the user's shell with echo off.
+  Terminal helpers, compiled from `src/libraries/`. `clear_screen` writes `\033[2J\033[H` and backs the `clear` instruction. `set_buffered_input` turns off canonical mode and echo so a keypress arrives without Enter; it is **not** exposed to bP yet, and note it restores only on an explicit `set_buffered_input(true)` — an interpreter that exits while unbuffered leaves the user's shell with echo off. The library's other instruction, `exec`, is not a library function at all: it lives in the dispatch arm and calls `system()` through a local `run_shell` helper, which reports `exec failed:` on a non-zero status. `system` is `warn_unused_result`, so the status cannot simply be discarded.
+
+- `random.h` / `random.cpp` — libraries/random.
+  - `void randomint(int& result, int from, int up_to)` — whole number, both ends included.
+  - `void randomdouble(double& result, double from, double up_to)` — real number in `[from, up_to)`.
+  - `void randombool(bool& result)` — even coin flip.
+  - `void doublebellcurve(double& result, double mean, double deviation)` — normally distributed.
+
+  Each writes through its first parameter rather than returning, because a bP instruction has no way to hand a value back to an expression. All four share one `mt19937` from a function-local static: building a generator from `random_device` per call is slow, and where `random_device` is not a real entropy source it reseeds identically every time, so the "random" number never changes. Reversed bounds are swapped rather than left undefined, and a zero deviation returns the mean, since `normal_distribution` requires a positive spread.
 
 ## unit_tests/
 
