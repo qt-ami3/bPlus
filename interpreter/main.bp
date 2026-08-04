@@ -1,7 +1,0 @@
-use "random"
-randomint(x, 1, 100);
-shout(x);
-if (x == 67 || x == 69) {
-  end();
-}
-break();
