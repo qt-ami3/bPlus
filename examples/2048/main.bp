@@ -1,0 +1,234 @@
+use "random"
+use "shell_utilities"
+
+grid[4][4] = {
+ 0, 0, 0, 0,
+ 0, 0, 0, 0,
+ 0, 0, 0, 0,
+ 0, 0, 0, 0
+};
+
+line[4];
+
+score = 0;
+won = false;
+over = false;
+
+placed = 0;
+for(".start_tiles.bp") {
+  randomint(sx, 0, 3);
+  randomint(sy, 0, 3);
+  if (grid[sx][sy] == 0) {
+    grid[sx][sy] = 2;
+    placed = placed + 1;
+  }
+  if (placed == 2) {
+    end();
+  }
+}
+
+buffered(false);
+
+for(".game.bp") {
+  clear();
+  shout("2048    score: ", score);
+  break(2);
+
+  ri = 0;
+  for(".draw_row.bp") {
+    rj = 0;
+    for(".draw_cell.bp") {
+      rv = grid[ri][rj] + 0;
+
+      pad = "    ";
+      if (rv > 9) {
+        pad = "   ";
+      }
+      if (rv > 99) {
+        pad = "  ";
+      }
+      if (rv > 999) {
+        pad = " ";
+      }
+
+      if (rv == 0) {
+        shout("    .");
+      }
+      if (rv != 0) {
+        shout(pad, rv);
+      }
+
+      rj = rj + 1;
+      if (rj == 4) {
+        end();
+      }
+    }
+    break(2);
+    ri = ri + 1;
+    if (ri == 4) {
+      end();
+    }
+  }
+
+  if (won == true) {
+    shout("2048 reached, you win.");
+    break();
+    end();
+  }
+  if (over == true) {
+    shout("no moves left, game over.");
+    break();
+    end();
+  }
+
+  shout("arrow keys to move, q to quit");
+  break();
+
+  valid = false;
+  for(".input.bp") {
+    shinkey(input);
+    if (input == "up" || input == "down"
+      || input == "right" || input == "left" || input == "q"
+    ) {
+      valid = true;
+    }
+    if (valid == true) {
+      end();
+    }
+  }
+
+  if (input == "q") {
+    end();
+  }
+
+  horiz = 0;
+  flip = 0;
+  if (input == "left" || input == "right") {
+    horiz = 1;
+  }
+  if (input == "right" || input == "down") {
+    flip = 1;
+  }
+
+  moved = false;
+  L = 0;
+  for(".slide_line.bp") {
+    w = 0;
+    last = 0;
+
+    P = 0;
+    for(".slide_read.bp") {
+      q = flip * (3 - P) + (1 - flip) * P;
+      r = horiz * L + (1 - horiz) * q;
+      c = (1 - horiz) * L + horiz * q;
+      val = grid[r][c] + 0;
+
+      if (val != 0) {
+        merge = false;
+        if (last == val) {
+          merge = true;
+        }
+
+        if (merge == true) {
+          line[w] = val + val;
+          score = score + val + val;
+          w = w + 1;
+          last = 0;
+          if (val + val == 2048) {
+            won = true;
+          }
+        }
+        if (merge == false) {
+          if (last != 0) {
+            line[w] = last;
+            w = w + 1;
+          }
+          last = val + 0;
+        }
+      }
+
+      P = P + 1;
+      if (P == 4) {
+        end();
+      }
+    }
+
+    if (last != 0) {
+      line[w] = last;
+      w = w + 1;
+    }
+
+    for(".slide_pad.bp") {
+      if (w == 4) {
+        end();
+      }
+      line[w] = 0;
+      w = w + 1;
+    }
+
+    P = 0;
+    for(".slide_write.bp") {
+      q = flip * (3 - P) + (1 - flip) * P;
+      r = horiz * L + (1 - horiz) * q;
+      c = (1 - horiz) * L + horiz * q;
+
+      if (grid[r][c] != line[P]) {
+        moved = true;
+      }
+      grid[r][c] = line[P];
+
+      P = P + 1;
+      if (P == 4) {
+        end();
+      }
+    }
+
+    L = L + 1;
+    if (L == 4) {
+      end();
+    }
+  }
+
+  if (moved == true) {
+    for(".new_tile.bp") {
+      randomint(sx, 0, 3);
+      randomint(sy, 0, 3);
+      if (grid[sx][sy] == 0) {
+        grid[sx][sy] = 2;
+        end();
+      }
+    }
+  }
+
+  alive = false;
+  oi = 0;
+  for(".check_row.bp") {
+    oj = 0;
+    for(".check_cell.bp") {
+      if (grid[oi][oj] == 0) {
+        alive = true;
+      }
+      if (oj < 3 && grid[oi][oj] == grid[oi][oj + 1]) {
+        alive = true;
+      }
+      if (oi < 3 && grid[oi][oj] == grid[oi + 1][oj]) {
+        alive = true;
+      }
+
+      oj = oj + 1;
+      if (oj == 4) {
+        end();
+      }
+    }
+    oi = oi + 1;
+    if (oi == 4) {
+      end();
+    }
+  }
+
+  if (alive == false) {
+    over = true;
+  }
+}
+
+end();

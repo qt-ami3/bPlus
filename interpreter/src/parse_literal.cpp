@@ -23,8 +23,11 @@ std::optional<VarValue> parse_literal_as(const std::string& literal, VarType typ
         return VarValue(value);
       }
       case VarType::String: {
-        if (literal.size() < 2 || literal.front() != '"' || literal.back() != '"') return std::nullopt;
-        return VarValue(between(literal, '"', '"'));
+        if (literal.size() >= 2 && literal.front() == '"' && literal.back() == '"')
+          return VarValue(between(literal, '"', '"'));
+        if (literal.size() >= 2 && literal.front() == '\'' && literal.back() == '\'')
+          return VarValue(between(literal, '\'', '\''));
+        return std::nullopt;
       }
       case VarType::Bool: {
         if (literal == "true") return VarValue(true);
@@ -41,7 +44,9 @@ std::optional<VarValue> parse_literal_as(const std::string& literal, VarType typ
 }
 
 std::optional<VarValue> infer_literal(const std::string& literal, VarType& out_type) {
-  if (literal.size() >= 2 && literal.front() == '"' && literal.back() == '"') {
+  if (literal.size() >= 2
+    && ((literal.front() == '"' && literal.back() == '"')
+      || (literal.front() == '\'' && literal.back() == '\''))) {
     out_type = VarType::String;
     return parse_literal_as(literal, VarType::String);
   }

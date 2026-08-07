@@ -127,26 +127,22 @@ struct Parser {
     if (t->kind == Token::Name) {
       pos++;
 
-      const Token* bracket = peek();
-      if (bracket && bracket->kind == Token::LBracket) {  // arr[0], arr[i + 1]
+      // One bracket for arr[0], two for grid[1][2], each index an expression
+      // of its own. The mangled name is built up as they are read.
+      std::string mangled = t->text;
+      while (peek() && peek()->kind == Token::LBracket) {
         pos++;
         Value index = parse_sum();
         const Token* close = peek();
         if (!ok || !close || close->kind != Token::RBracket) { ok = false; return {}; }
         pos++;
-
-        const long long slot = static_cast<long long>(index.v);
-        auto element = vars.find(t->text + "[" + std::to_string(slot) + "]");
-        if (element == vars.end()) {
-          std::cerr << "Index out of range: " << t->text << "[" << slot << "]\n";
-          ok = false; return {};
-        }
-        return resolve(element->second);
+        mangled += "[" + std::to_string(static_cast<long long>(index.v)) + "]";
       }
 
-      auto it = vars.find(t->text);
+      auto it = vars.find(mangled);
       if (it == vars.end()) {
-        std::cerr << "Unknown variable in expression: " << t->text << "\n";
+        if (mangled == t->text) std::cerr << "Unknown variable in expression: " << t->text << "\n";
+        else std::cerr << "Index out of range: " << mangled << "\n";
         ok = false; return {};
       }
       return resolve(it->second);
@@ -187,28 +183,37 @@ std::optional<VarValue> eval_expr(const std::string& expr,
     if (t.kind == Token::Op || t.kind == Token::LBracket) { has_op = true; break; }
   if (!has_op) return std::nullopt;
 
-  //  A lone element — `arr[0]`, `arr[i + 1]` — is answered straight from the
-  //  map. Going through the arithmetic below would reject a string element as
-  //  "Cannot use string in expression" when nothing arithmetic was asked for,
-  //  and would round a whole number through double on the way back.
+  //  A lone element — `arr[0]`, `grid[1][2]`, `arr[i + 1]` — is answered
+  //  straight from the map. Going through the arithmetic below would reject a
+  //  string element as "Cannot use string in expression" when nothing
+  //  arithmetic was asked for, and would round a whole number through double.
   if (toks.size() >= 4 && toks[0].kind == Token::Name && toks[1].kind == Token::LBracket) {
-    int depth = 0;
-    size_t closing = 0;
-    for (size_t i = 1; i < toks.size(); i++) {
-      if (toks[i].kind == Token::LBracket) depth++;
-      else if (toks[i].kind == Token::RBracket && --depth == 0) { closing = i; break; }
-    }
+    std::string mangled = toks[0].text;
+    size_t at = 1;
+    bool whole = true;
 
-    if (closing == toks.size() - 1) {
-      const std::vector<Token> index_tokens(toks.begin() + 2, toks.begin() + closing);
+    while (at < toks.size() && toks[at].kind == Token::LBracket) {
+      int depth = 0;
+      size_t closing = 0;
+      for (size_t j = at; j < toks.size(); j++) {
+        if (toks[j].kind == Token::LBracket) depth++;
+        else if (toks[j].kind == Token::RBracket && --depth == 0) { closing = j; break; }
+      }
+      if (closing == 0) { whole = false; break; }
+
+      const std::vector<Token> index_tokens(toks.begin() + at + 1, toks.begin() + closing);
       Parser index_parser{index_tokens, variables};
       Value index = index_parser.parse_sum();
-      if (!index_parser.ok || index_parser.pos != index_tokens.size()) return std::nullopt;
+      if (!index_parser.ok || index_parser.pos != index_tokens.size()) { whole = false; break; }
 
-      const long long slot = static_cast<long long>(index.v);
-      auto element = variables.find(toks[0].text + "[" + std::to_string(slot) + "]");
+      mangled += "[" + std::to_string(static_cast<long long>(index.v)) + "]";
+      at = closing + 1;
+    }
+
+    if (whole && at == toks.size()) {
+      auto element = variables.find(mangled);
       if (element == variables.end()) {
-        std::cerr << "Index out of range: " << toks[0].text << "[" << slot << "]\n";
+        std::cerr << "Index out of range: " << mangled << "\n";
         return std::nullopt;
       }
       return element->second.value;

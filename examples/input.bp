@@ -1,0 +1,9 @@
+use "shell_utilities"
+
+x = 0;
+shout("Enter a value to print: ");
+shin(x);
+clear();
+shout(x);
+break();
+end();

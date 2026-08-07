@@ -17,6 +17,34 @@ string array_element(const string& name, long long index) {
   return name + "[" + to_string(index) + "]";
 }
 
+string array_element(const string& name, long long row, long long column) {
+  return name + "[" + to_string(row) + "][" + to_string(column) + "]";
+}
+
+string array_columns(const string& name) {
+  return name + "[][]";
+}
+
+//  Splits an initialiser on commas that sit outside any braces, so a nested
+//  "{1,2},{3,4}" comes back as two rows rather than four loose numbers.
+static vector<string> split_values(const string& text) {
+  vector<string> parts;
+  int depth = 0;
+  size_t start = 0;
+
+  for (size_t i = 0; i < text.size(); i++) {
+    if (text[i] == '{') depth++;
+    else if (text[i] == '}') depth--;
+    else if (text[i] == ',' && depth == 0) {
+      parts.push_back(text.substr(start, i - start));
+      start = i + 1;
+    }
+  }
+
+  parts.push_back(text.substr(start));
+  return parts;
+}
+
 string array_header(const string& name) {
   return name + "[]";
 }
@@ -105,6 +133,21 @@ bool array_statement(map<string, Variable>& variables, const string& statement) 
   }
 
   const string index_text = trim(lhs.substr(open + 1, close - open - 1));
+
+  //  A second bracket pair right after the first makes it two dimensional.
+  string column_text;
+  bool two_dimensional = false;
+  const size_t second_open = lhs.find('[', close);
+  if (second_open != string::npos) {
+    const size_t second_close = lhs.find(']', second_open);
+    if (second_close == string::npos) {
+      cerr << "Invalid array declaration: " << statement << endl;
+      return true;
+    }
+    column_text = trim(lhs.substr(second_open + 1, second_close - second_open - 1));
+    two_dimensional = true;
+  }
+
   const string rhs = equals == string::npos ? "" : trim(between(statement, '=', ';'));
   const bool initialiser = !rhs.empty() && rhs.front() == '{';
 
@@ -116,6 +159,68 @@ bool array_statement(map<string, Variable>& variables, const string& statement) 
     }
 
     const VarType element_type = declared ? *declared : VarType::Int;
+
+    if (two_dimensional) {
+      const auto columns = as_whole(column_text, variables);
+      if (!columns || *columns < 0) {
+        cerr << "Bad array length: " << column_text << endl;
+        return true;
+      }
+
+      variables[array_header(name)] =
+        {element_type, declared.has_value(), VarValue(static_cast<int>(*length))};
+      variables[array_columns(name)] =
+        {element_type, declared.has_value(), VarValue(static_cast<int>(*columns))};
+
+      for (long long r = 0; r < *length; r++)
+        for (long long c = 0; c < *columns; c++)
+          variables[array_element(name, r, c)] =
+            {element_type, declared.has_value(), default_value(element_type)};
+
+      if (!initialiser) return true;
+
+      //  Rows may be braced — {{1,2},{3,4}} — or written flat, in which case
+      //  the values are taken row by row.
+      const vector<string> rows = split_values(between_matching(rhs, '{', '}'));
+      long long slot = 0;
+
+      for (const string& row : rows) {
+        const string bare = trim(row);
+        const vector<string> cells = bare.front() == '{'
+          ? split_values(between_matching(bare, '{', '}')) : vector<string>{bare};
+
+        for (const string& cell : cells) {
+          const long long r = slot / *columns;
+          const long long c = slot % *columns;
+          slot++;
+
+          if (r >= *length) { cerr << "Too many values for " << name << endl; return true; }
+
+          const string item = trim(cell);
+          if (declared) {
+            auto typed = parse_literal_as(item, *declared);
+            if (!typed) {
+              cerr << "Type error: cannot assign '" << item << "' to "
+                << var_type_name(*declared) << " " << name << endl;
+              continue;
+            }
+            variables[array_element(name, r, c)] = {*declared, true, *typed};
+            continue;
+          }
+
+          VarType type;
+          auto value = resolve_value(item, variables, type);
+          if (!value) { cerr << "Could not infer type for: " << item << endl; continue; }
+          variables[array_element(name, r, c)] = {type, false, *value};
+        }
+
+        //  A braced row that ran short leaves the rest of it at its default.
+        if (bare.front() == '{' && slot % *columns != 0) slot += *columns - (slot % *columns);
+      }
+
+      return true;
+    }
+
     variables[array_header(name)] =
       {element_type, declared.has_value(), VarValue(static_cast<int>(*length))};
 
@@ -164,6 +269,46 @@ bool array_statement(map<string, Variable>& variables, const string& statement) 
 
   const auto index = as_whole(index_text, variables);
   const auto length = as_integer(header->second);
+  auto columns_header = variables.find(array_columns(name));
+
+  if (two_dimensional != (columns_header != variables.end())) {
+    cerr << (two_dimensional ? "Not a two dimensional array: " : "Needs two indexes: ")
+      << name << endl;
+    return true;
+  }
+
+  if (two_dimensional) {
+    const auto row = index;
+    const auto column = as_whole(column_text, variables);
+    const auto columns = as_integer(columns_header->second);
+
+    if (!row || !length || *row < 0 || *row >= *length
+      || !column || !columns || *column < 0 || *column >= *columns) {
+      cerr << "Index out of range: " << name << "[" << index_text << "]["
+        << column_text << "]" << endl;
+      return true;
+    }
+
+    const string slot = array_element(name, *row, *column);
+
+    if (header->second.is_static) {
+      auto typed = parse_literal_as(rhs, header->second.type);
+      if (!typed) {
+        cerr << "Type error: cannot assign '" << rhs << "' to "
+          << var_type_name(header->second.type) << " " << name << endl;
+        return true;
+      }
+      variables[slot] = {header->second.type, true, *typed};
+      return true;
+    }
+
+    VarType type;
+    auto value = resolve_value(rhs, variables, type);
+    if (!value) { cerr << "Could not infer type for: " << rhs << endl; return true; }
+    variables[slot] = {type, false, *value};
+    return true;
+  }
+
   if (!index || !length || *index < 0 || *index >= *length) {
     cerr << "Index out of range: " << name << "[" << index_text << "]" << endl;
     return true;

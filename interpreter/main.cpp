@@ -6,6 +6,8 @@ using namespace std;
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <csignal>
+#include <unistd.h>
 #include <filesystem>
 #include <iostream>
 #include "./include/trim.h"
@@ -15,10 +17,34 @@ using namespace std;
 #include "./include/variable.h"
 #include "./include/eval_expr.h"
 #include "./include/validate.h"
+#include "./include/libraries/shell_utilities.h"
 #include "./include/has_extension.h"
 #include "./include/process_ram_kb.h"
 #include "./include/string_contains.h"
 #include "./include/instruction_loop.h"
+
+//  The loop-body files, for the interrupt to clear away. A pointer rather than
+//  a copy because the set is still being added to while the program runs, and
+//  null until main has one, so an interrupt arriving early finds nothing.
+static const set<string>* created_files = nullptr;
+
+//  A program that turned buffered input off would otherwise leave the shell
+//  with no echo once it stops. bP programs usually run until interrupted, so
+//  Ctrl-C has to put the terminal back as much as a clean finish does.
+//  set_buffered_input(true) does nothing when buffering was never turned off.
+//
+//  The body files go the same way. An interactive program is normally left
+//  with Ctrl-C rather than `end();`, so skipping them here means the usual way
+//  out is the one that litters. unlink, not filesystem::remove, which
+//  allocates and so cannot be called from a handler.
+static void restore_terminal(int signal_number) {
+  set_buffered_input(true);
+
+  if (created_files)
+    for (const string& path : *created_files) unlink(path.c_str());
+
+  _exit(128 + signal_number);
+}
 
 void print_usage(const string& program_name) {
   cerr << "Usage:" << endl
@@ -28,6 +54,9 @@ void print_usage(const string& program_name) {
 }
 
 int main(int argc, char* argv[]) {
+  signal(SIGINT, restore_terminal);
+  signal(SIGTERM, restore_terminal);
+
   if (argc < 2 || argc > 3) {
     print_usage(argv[0]);
     return 1;
@@ -61,6 +90,7 @@ int main(int argc, char* argv[]) {
 
   vector<string> statements;
   set<string> created;      //  Loop-body files, removed once the program ends.
+  created_files = &created;
   vector<string> errors;
   vector<string> reported;  //  Errors already on screen, so a broken file isn't spammed.
 
@@ -90,6 +120,8 @@ int main(int argc, char* argv[]) {
       print_system_info(verbose);
     }
   }
+
+  set_buffered_input(true);  //  Whatever the program did to the terminal, undo it.
 
   //  A `for` body is a real file while the program runs, so it can be read and
   //  edited, and is cleared away only once there is nothing left to run.

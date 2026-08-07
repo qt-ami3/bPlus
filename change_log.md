@@ -413,7 +413,7 @@ Changes:
 - interpreter/include/shell_utilities.h removed
     A half-finished duplicate of the library header, sitting in include/ root instead of include/libraries/, with `#prama once` and two declarations missing semicolons. Nothing included it and it would not have compiled if anything had.
 
-## Latest: Multiple arguments, logical operators, and a random library (0.8.0)
+## Multiple arguments, logical operators, and a random library (0.8.0)
 
 Brackets can hold more than one thing now. `shout("hi ", name, "!")` prints all three parts, which finally undoes the single-argument regression that has been sat in the known issues since 0.3.0, and conditions take `&&` and `||` so you can ask two things at once instead of nesting an `if` inside an `if`.
 
@@ -497,3 +497,83 @@ Known issues:
 
 - doublebellcurve is an awkward name in bP
     The `double` refers to the C++ return type, which a bP program never sees. `bell_curve` would read better.
+
+
+## Latest: Added shell input(shin) (0.9.0)
+
+This patch is actually kind of huge for me because I get to make a playable 2048 game, all in my very own language. All of the major features of the language are holding up and sclaing so far while being more capable and slimmer than Python.
+
+Added:
+
+- Shin
+    Shin is the same a cin in C++, it stands for "Shell in".
+
+- examples/2048
+    A playable 2048, and the first example that leans on `for`, `shinkey` and
+    two dimensional arrays at once. Arrow keys move, `q` quits, the score is
+    kept, and the game ends on 2048 or when no move is left.
+
+    The four directions share one slide rather than having four copies of it.
+    The direction is carried as two numbers — `horiz` for whether a line is a
+    row, `flip` for whether it is walked from the far end — and a line index
+    `L` with a position `P` along the travel then name a cell:
+
+```
+q = flip * (3 - P) + (1 - flip) * P;
+r = horiz * L + (1 - horiz) * q;
+c = (1 - horiz) * L + horiz * q;
+```
+
+    Every direction becomes the same slide toward `P = 0`, which is what keeps
+    the file to one merge routine instead of four. Whether a pair merges is
+    decided into a `merge` flag before anything is written, because the merge
+    clears the held tile and, with no `else`, the second test would otherwise
+    see the cleared value and act on it too.
+
+Fixes:
+
+- An interrupt left every `for` body file behind
+    `restore_terminal` put the terminal back and then `_exit`ed, which skipped
+    the removal loop at the end of main, so Ctrl-C left one file per loop in
+    the working directory — twelve of them for `examples/2048`. An interactive
+    program is normally left with Ctrl-C rather than by reaching `end();`, so
+    the usual way out was the one that littered.
+
+    The handler now unlinks them first. It reads the set through a file-scope
+    pointer, null until main has one so an early interrupt finds nothing, and
+    uses `unlink` rather than `filesystem::remove`, which allocates and so
+    cannot be called from a handler. SIGTERM takes the same path.
+
+Known issues:
+
+- `Could not infer type for:` names the value, not the variable, and gives no line
+    `last = val;` reports `Could not infer type for: val`, which reads as though
+    `val` were the problem when the variable left unset is `last`. There is no
+    line number either, unlike `Extra ';' for statement line 204:`, so two
+    identical messages from two different lines cannot be told apart. It is not
+    fatal, so the target is simply never created and every later read of it
+    misbehaves quietly — and a program calling `clear()` each turn wipes the
+    message off screen before it can be read.
+
+- No escape sequences in string literals
+    `"\t"` prints a backslash and a `t`. `break()` covers the newline, but there
+    is no way to write a tab, so aligning columns means padding with spaces.
+
+- No comments
+    There is no comment syntax. A `//` line is not skipped: it is joined to the
+    statements after it until a `;` is found, so it swallows real code and
+    reports `Extra ';' for statement`. Nothing in the language reserves `#`
+    either.
+
+- A variable cannot be assigned to a variable
+    `x = y;` reports `Could not infer type for: y` and leaves `x` unset, for
+    the same reason `shout(5);` prints nothing — the evaluator only engages on
+    an operator, and assignment falls back to literal parsing. `x = y + 0;`
+    works. Assignment to an array slot does not share the problem:
+    `line[i] = y;` is fine.
+
+- A bare array slot cannot be read into a variable
+    `val = grid[r][c];` fails the same way and needs `+ 0`. The other
+    directions all work: `grid[r][c] = line[P];`, `shout(grid[r][c]);` and
+    `if (grid[r][c] == 0)` all read a slot without help, which makes the one
+    that does not an easy trap to fall into.

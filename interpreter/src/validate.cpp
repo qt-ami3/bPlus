@@ -5,6 +5,39 @@ using namespace std;
 #include "../include/trim.h"
 #include "../include/validate.h"
 
+namespace {
+
+//  What a piece of text is made of, ignoring anything inside a quoted literal
+//  of either kind, so a ';' or a brace in "text" or 'A' does not count.
+struct Shape {
+  vector<size_t> semicolons;
+  int opens = 0;
+  int closes = 0;
+};
+
+Shape shape_of(const string& text) {
+  Shape shape;
+  char quote = 0;  //  Which quote opened the text we are inside, if any.
+
+  for (size_t i = 0; i < text.size(); i++) {
+    if (quote) { if (text[i] == quote) quote = 0; continue; }
+    if (text[i] == '"' || text[i] == '\'') { quote = text[i]; continue; }
+
+    if (text[i] == ';') shape.semicolons.push_back(i);
+    else if (text[i] == '{') shape.opens++;
+    else if (text[i] == '}') shape.closes++;
+  }
+
+  return shape;
+}
+
+//  The word before the first '(' — `if`, `for`, or an instruction name.
+string keyword_of(const string& text) {
+  return trim(text.substr(0, text.find('(')));
+}
+
+}  // namespace
+
 bool validate_and_count(const string& filename, vector<string>& statements,
                         int& statement_count, int& semicolon_count, vector<string>& errors) {
   statements.clear();
@@ -18,39 +51,49 @@ bool validate_and_count(const string& filename, vector<string>& statements,
     return false;
   }
 
-  bool in_string = false;
   int depth = 0;
   int line_number = 0;
+  int began_on = 0;    //  Line the statement being gathered started on.
+  string pending;      //  Lines joined until they make a whole statement.
   string line;
+
   while (getline(file, line)) {
     line_number++;
 
-    vector<size_t> semicolons;  //  Positions of every ';' outside a string.
-    int opens = 0;
-    int closes = 0;
-    for (size_t i = 0; i < line.size(); i++) {
-      if (line[i] == '"') in_string = !in_string;
-      else if (in_string) continue;
-      else if (line[i] == ';') semicolons.push_back(i);
-      else if (line[i] == '{') opens++;
-      else if (line[i] == '}') closes++;
-    }
+    const string piece = trim(line);
+    if (piece.empty() && pending.empty()) continue;
+    if (piece.empty()) continue;  //  A blank line inside a statement is spacing.
 
-    const string statement = trim(line);
-    if (statement.empty()) continue;
+    if (pending.empty()) began_on = line_number;
+    pending += pending.empty() ? piece : " " + piece;
+
+    const Shape shape = shape_of(pending);
+    const string keyword = keyword_of(pending);
+
+    //  A statement is whole once one of these is true; until then the next
+    //  line belongs to it, which is what lets a condition or an array
+    //  initialiser be written across several lines.
+    const bool block_header = pending.back() == '{'
+      && (keyword == "if" || keyword == "for" || pending == "{");
+    const bool block_close = pending == "}";
+    const bool declaration = pending.rfind("use ", 0) == 0 || pending.rfind("use\t", 0) == 0;
+    const bool ended = !shape.semicolons.empty() && shape.opens == shape.closes;
+
+    if (!block_header && !block_close && !declaration && !ended) continue;
+
+    const string statement = pending;
+    pending.clear();
 
     statement_count++;
-    semicolon_count += semicolons.size();
+    semicolon_count += shape.semicolons.size();
 
-    //  A block opens with a header ending in '{' and closes with a lone '}',
-    //  each on a line of its own and neither carrying a ';'.
-    if (semicolons.empty() && opens == 1 && closes == 0 && statement.back() == '{') {
+    if (block_header) {
       depth++;
       statements.push_back(statement);
       continue;
     }
 
-    if (semicolons.empty() && closes == 1 && opens == 0 && statement == "}") {
+    if (block_close) {
       if (depth == 0) {
         errors.push_back("Unmatched '}' on line " + to_string(line_number));
         continue;
@@ -62,43 +105,39 @@ bool validate_and_count(const string& filename, vector<string>& statements,
 
     //  `use "library"` is a declaration rather than a statement: it names a
     //  library compiled in from src/libraries and carries no ';'.
-    if (statement.rfind("use ", 0) == 0 || statement.rfind("use\t", 0) == 0) {
+    if (declaration) {
       statements.push_back(statement);
       continue;
     }
 
-    //  Braces only mean a block on a line without a ';'. On a statement line
-    //  they are data, as in an array initialiser: arr[3] = {1,2,3};
-    if (semicolons.empty() && (opens > 0 || closes > 0)) {
-      errors.push_back("Braces belong on a line of their own, line " + to_string(line_number)
+    //  Braces on a finished statement are data — an array initialiser — but a
+    //  block keyword carrying its own braces is a block written on one line,
+    //  which would otherwise fail later as an unknown instruction.
+    if (shape.opens > 0 && (keyword == "if" || keyword == "for")) {
+      errors.push_back("Braces belong on a line of their own, line " + to_string(began_on)
         + ": " + statement);
-      continue;
-    }
-
-    //  A block keyword whose braces sit on its own line: without this the
-    //  allowance above lets `if (x) { shout("a"); }` through as a statement,
-    //  and it fails later as an unknown instruction instead of saying why.
-    const string keyword = trim(statement.substr(0, statement.find('(')));
-    if (opens > 0 && (keyword == "if" || keyword == "for")) {
-      errors.push_back("Braces belong on a line of their own, line " + to_string(line_number)
-        + ": " + statement);
-      continue;
-    }
-
-    if (semicolons.empty()) {
-      errors.push_back("Missing ';' for statement line " + to_string(line_number)
-        + ": " + statement + "*;*");
       continue;
     }
 
     //  A statement ends at its first ';', so any that follow are extra.
-    for (size_t i = 1; i < semicolons.size(); i++) {
-      errors.push_back("Extra ';' for statement line " + to_string(line_number)
-        + ": " + trim(line.substr(0, semicolons[i])) + "*;*"
-        + trim(line.substr(semicolons[i] + 1)));
+    for (size_t i = 1; i < shape.semicolons.size(); i++) {
+      errors.push_back("Extra ';' for statement line " + to_string(began_on)
+        + ": " + trim(statement.substr(0, shape.semicolons[i])) + "*;*"
+        + trim(statement.substr(shape.semicolons[i] + 1)));
     }
 
     statements.push_back(statement);
+  }
+
+  //  Anything still being gathered at the end never finished.
+  if (!pending.empty()) {
+    const Shape shape = shape_of(pending);
+    if (shape.opens != shape.closes)
+      errors.push_back("Unclosed '{' for statement line " + to_string(began_on)
+        + ": " + pending);
+    else
+      errors.push_back("Missing ';' for statement line " + to_string(began_on)
+        + ": " + pending + "*;*");
   }
 
   if (depth > 0)

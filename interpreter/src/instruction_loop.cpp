@@ -109,8 +109,11 @@ static optional<Variable> resolve_operand(const string& text,
   const string operand = trim(text);
   if (operand.empty()) return nullopt;
 
+  //  Either quote makes text: "word" and 'A' differ only in spelling.
   if (operand.size() >= 2 && operand.front() == '"' && operand.back() == '"')
     return Variable{VarType::String, false, between(operand, '"', '"')};
+  if (operand.size() >= 2 && operand.front() == '\'' && operand.back() == '\'')
+    return Variable{VarType::String, false, between(operand, '\'', '\'')};
 
   if (auto value = eval_expr(operand, variables)) {
     const VarType type = holds_alternative<double>(*value) ? VarType::Float
@@ -272,7 +275,7 @@ static bool numeric_arguments(const vector<string>& arguments,
 //  brings. `use "name"` makes a library's instructions callable; without it
 //  they stay refused, so a program has to declare what it depends on.
 static const map<string, set<string>> libraries = {
-  {"shell_utilities", {"clear", "exec"}},
+  {"shell_utilities", {"clear", "exec", "buffered", "shinkey"}},
   {"random", {"randomint", "randomdouble", "randombool", "doublebellcurve"}},
 };
 
@@ -467,12 +470,43 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
 
           if (string_contains(piece, "\"")) {           // shout("text");
             cout << between(piece, '"', '"');
+          } else if (piece.size() >= 2 && piece.front() == '\'') {  // shout('A');
+            cout << between(piece, '\'', '\'');
           } else if (auto value = eval_expr(piece, variables)) {  // shout(1 + 2);
             print_variable(Variable{VarType::Int, false, *value});
           } else {                                    // shout(z);
             auto it = variables.find(piece);
             if (it != variables.end()) {print_variable(it->second);}
           }
+        }
+
+        //  shout writes no newline of its own, so on a terminal — which is
+        //  line buffered — nothing appears until the buffer fills or the
+        //  program ends. An interactive program would look frozen.
+        cout << flush;
+      } else if (name == "shin") {
+        //  Shell in, the other half of shout: reads a line and puts it in the
+        //  named variable, which is made if it does not exist. The type is
+        //  inferred from what was typed exactly as an assignment would infer
+        //  it, so a number comes back as a number rather than as text.
+        const string target = trim(arg);
+        string line;
+
+        if (target.empty()) {
+          cerr << "shin needs a variable: shin(name)" << endl;
+        } else if (!getline(cin, line)) {
+          cerr << "shin: no more input" << endl;
+        } else {
+          line = trim(line);
+
+          VarType type = VarType::String;
+          auto value = infer_literal(line, type);
+          if (!value) {
+            type = VarType::String;
+            value = VarValue(line);
+          }
+
+          store_result(variables, target, type, *value);
         }
       } else if (name == "break") {
         if (arg.empty()) {
@@ -524,6 +558,28 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
               store_result(variables, target, VarType::Float, result);
             }
           }
+        } else if (name == "shinkey") {
+          //  One keypress, no Enter. Arrow keys come back named because their
+          //  escape sequence cannot be written as a bP literal.
+          const string target = trim(arg);
+          string key;
+
+          if (target.empty()) {
+            cerr << "shinkey needs a variable: shinkey(name)" << endl;
+          } else {
+            cout << flush;  //  Show the prompt before waiting for the key.
+            read_key(key);
+            if (key.empty()) cerr << "shinkey: no more input" << endl;
+            else store_result(variables, target, VarType::String, key);
+          }
+        } else if (name == "buffered") {
+          //  buffered(false) hands keypresses over one at a time, without
+          //  waiting for Enter. main puts the terminal back on the way out.
+          auto operand = resolve_operand(arg, variables);
+          auto wanted = operand ? as_number(*operand) : nullopt;
+
+          if (!wanted) cerr << "buffered needs true or false: buffered(false)" << endl;
+          else set_buffered_input(*wanted != 0);
         } else if (name == "clear") {
           clear_screen();
         } else if (name == "exec") {
