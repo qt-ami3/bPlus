@@ -458,6 +458,9 @@ doublebellcurve(g, 100, 15);
 
 Changes:
 
+- README.md
+    As the core utility's of the language have formed over the course of development, the language has shaped up to be something more than just high level C. What started as a mild fascination with a dead language has evolved into something really unique and so the README has been updated to reflect that.
+
 - between_matching, in the between module
     Pairs the first bracket with the one that closes it, counting nesting and ignoring brackets inside `"..."`. Argument and condition extraction both use it now. `between` itself is unchanged and still used where the first match is what is wanted.
 
@@ -477,6 +480,9 @@ Fixes:
 
 - src/libraries/random.cpp did not compile
     Six problems: no return types, `int result&` written backwards, untyped parameters, `bernoulli_distrobution` and `normal_distrobution` misspelled, `rng` undeclared in two functions, and three functions declaring a local `result` that shadowed the out-parameter — so even once compiling, a caller would never have seen a value. It also built a fresh generator from `random_device` on every call, which is slow and, where `random_device` is not a real entropy source, returns the same number every time.
+
+- use did not reach a for body
+    `use "random"` at the top of a file did not carry into a `for` block, so every library instruction inside a loop was refused — `doublebellcurve needs: use "random"` on each turn. The body runs through a recursive `instruction_loop` call, and the `enabled` set was local to each call, so a body always started with none. The caller's set is now passed down into the body. A file run by `pass` still starts empty and declares for itself, since that is a separate program.
 
 Known issues:
 

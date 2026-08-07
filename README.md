@@ -1,4 +1,4 @@
-#   bP - a reflective, dynamically typed, successor to the B programming language
+#   Banyan - a reflective, dynamically typed, loop oriented language.
 
 ##  Table of contents
 - 1. Q&A
@@ -6,16 +6,15 @@
 - 3. Philosophies
 
 ##  1. Q&A
-- Why "bP"?
-    "C is sorta B++ and I wanted to go for something that indicates an evolution of a classic third gen language into something unique, Something that deliberate like C(++) and flexible like python. I also like camelCase which I plan on naming functions in the language with."
+- Why "Banyan"?
+    I grew up in the mediocre rainbow state of Hawai'i. It kinda sucked a ton; groceries were unaffordable, where there wasn't lazy tourist traps there was nothing to do, the weather was hot and terrible, Kona (where I grew up) was a grey and empty desert, and I was born of Finnish descent giving me blue eyes which lended well to developing my crow's feet. I think just about the only fond memory I have of the place are the Banyan trees which you get lost in as you climb about, they sprout littler roots from their branches as they grow for support and nutrients. As what I originally intended as a successor to B grew and I found myself adding features that are generally considered taboo by other languages I found that code bases typically started to branch like my beloved Banyan trees so I decided it'd be a better name.
 
 - Why
-    "I hate Python, its frustrating to try to make something low level with and it squanders my creativity. I know it may be an unpopular opionion but I personally think the syntax of c(++) is beautiful whereas python is only simple because it is a simple language where the real work has already been done."
+    "I hate Python, it's frustrating to try to make something low level with and it squanders my creativity. I know it may be an unpopular opinion but I personally think the syntax of c(++) is beautiful whereas python is only simple because it is a simple language where the real work has already been done until you butcher that simplicity with the math module."
 
 ## 2. Contributing
-Currently, there is no contributer's file, if you want to contribute, make a fork, make your changes, describe your changes in change_log.md according to it's guidelines, and submit a pull request with any technical details needed to help the maintainer(s) review.
+Currently, there is no contributor's file, if you want to contribute, make a fork, make your changes, describe your changes in change_log.md according to its guidelines, and submit a pull request with any technical details needed to help the maintainer(s) review.
 
 ## 3. Philosophies
--   Instead of the machine word being the only data type, it will be, as mentioned, dynamically typed.
--   Simplicity with integrity; the language should aim to be as simple as possible whilst maintaining full user control.
--   Everything is a loop until specified otherwise.
+-   Simplicity hangs in the balance, the ability to control the program should not be compromised by the language's Simplicity.
+-   Everything is a loop until stopped with end() function.

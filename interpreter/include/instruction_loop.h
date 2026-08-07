@@ -9,8 +9,14 @@
 // `flag` is set by the `end` instruction, which also stops this loop; a file
 // pulled in by `use` gets its own flag, so its `end` cannot stop the caller.
 // `active` holds the files currently being run, so `use` can refuse a cycle.
+// `created` collects every file a `for` block wrote, so the caller can remove
+// them once the program is finished; nesting depth is read from it too.
 // `variables` is shared with every file `use` pulls in.
+// `enabled` seeds the libraries already declared with `use`, so a `for` body
+// inherits its file's declarations; a file run by `pass` starts empty and
+// declares its own.
 void instruction_loop(bool& flag, const std::string& filename,
                       const std::vector<std::string>& statements,
                       std::map<std::string, Variable>& variables, bool verbose,
-                      std::set<std::string>& active);
+                      std::set<std::string>& active, std::set<std::string>& created,
+                      std::set<std::string> enabled = {});

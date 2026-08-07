@@ -78,7 +78,8 @@ bool validate_and_count(const string& filename, vector<string>& statements,
     //  A block keyword whose braces sit on its own line: without this the
     //  allowance above lets `if (x) { shout("a"); }` through as a statement,
     //  and it fails later as an unknown instruction instead of saying why.
-    if (opens > 0 && trim(statement.substr(0, statement.find('('))) == "if") {
+    const string keyword = trim(statement.substr(0, statement.find('(')));
+    if (opens > 0 && (keyword == "if" || keyword == "for")) {
       errors.push_back("Braces belong on a line of their own, line " + to_string(line_number)
         + ": " + statement);
       continue;

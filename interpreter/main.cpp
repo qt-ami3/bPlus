@@ -6,6 +6,7 @@ using namespace std;
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 #include <iostream>
 #include "./include/trim.h"
 #include "./include/split.h"
@@ -59,6 +60,7 @@ int main(int argc, char* argv[]) {
   int semicolon_count = 0;
 
   vector<string> statements;
+  set<string> created;      //  Loop-body files, removed once the program ends.
   vector<string> errors;
   vector<string> reported;  //  Errors already on screen, so a broken file isn't spammed.
 
@@ -80,12 +82,20 @@ int main(int argc, char* argv[]) {
 
     map<string, Variable> variables;  //  Each pass starts from a clean state.
     set<string> active;               //  Files being run, so `use` can refuse a cycle.
-    instruction_loop(instruction_loop_break, filename, statements, variables, verbose, active);
+    instruction_loop(instruction_loop_break, filename, statements, variables, verbose,
+      active, created);
 
 
     if (verbose) {
       print_system_info(verbose);
     }
+  }
+
+  //  A `for` body is a real file while the program runs, so it can be read and
+  //  edited, and is cleared away only once there is nothing left to run.
+  for (const string& path : created) {
+    error_code error;
+    filesystem::remove(path, error);
   }
 
   if (verbose) {

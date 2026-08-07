@@ -67,7 +67,7 @@ One header in `include/` and one implementation in `src/` per module, all pulled
 - `bool validate_and_count(const std::string& filename, std::vector<std::string>& statements, int& statement_count, int& semicolon_count, std::vector<std::string>& errors)` — validate.h / validate.cpp
   Reads `filename` into `statements`, one entry per non-empty line: a `;`-terminated statement, a block header ending in `{`, a lone `}`, or a `use "library"` declaration. Counts semicolons and braces outside `"..."` literals and tracks brace depth. Fills `errors` and returns false for `Missing ';'`, `Extra ';'`, `Braces belong on a line of their own`, `Unmatched '}'` and `Unclosed '{'`. Braces on a line **with** a `;` are data, not a block, which is what makes `arr[3] = {1,2,3};` legal; a block keyword whose braces share its line is still refused so it says why. `in_string` is declared outside the line loop, so an unterminated `"` carries into following lines. Called once per pass by main, and again per file `pass` pulls in.
 
-- `void instruction_loop(bool& flag, const std::string& filename, const std::vector<std::string>& statements, std::map<std::string, Variable>& variables, bool verbose, std::set<std::string>& active)` — instruction_loop.h / instruction_loop.cpp
+- `void instruction_loop(bool& flag, const std::string& filename, const std::vector<std::string>& statements, std::map<std::string, Variable>& variables, bool verbose, std::set<std::string>& active, std::set<std::string>& created, std::set<std::string> enabled = {})` — instruction_loop.h / instruction_loop.cpp
   Walks the statement list, executing as it goes. Holds every built-in and all statement classification. Recursive: the `pass` arm calls it again for another file with the same `variables`. File-local helpers:
   - `canonical_path` — `filesystem::weakly_canonical`, so `"x.bp"` and `"./x.bp"` compare equal in `active` and a cycle cannot slip through.
   - `has_assignment` — a lone `=` outside quotes, skipping `==`, `!=`, `<=`, `>=`. Without it every condition would look like an assignment.
@@ -76,7 +76,7 @@ One header in `include/` and one implementation in `src/` per module, all pulled
   - `resolve_operand` — quoted string, then `eval_expr`, then variable lookup, then `infer_literal`.
   - `as_number`, `find_comparison`, `evaluate_condition` — condition support; numbers compare as `double`, strings as text, a mismatch sets `ok` false and the caller reports `Bad condition:`. `evaluate_condition` splits on `||` then `&&` before anything else and recurses, which is what gives `||` the loosest binding; a term wrapped entirely in its own brackets is unwrapped and recursed into. There is no `!` and no `and`/`or` word forms.
   - `matching_close` — index of the `}` closing a block, by depth counting, so skipping a false block skips nested blocks whole.
-  - `libraries`, `providing_library` — the registry of C++ libraries and their instructions; `use "name"` fills a local `enabled` set and an instruction is refused unless its library is in it.
+  - `libraries`, `providing_library` — the registry of C++ libraries and their instructions; `use "name"` fills the `enabled` parameter's set and an instruction is refused unless its library is in it. A `for` body's call passes the set down so a loop inherits its file's declarations; a `pass` call passes nothing, so each file declares for itself.
   - `scan_libraries` — pre-pass writing a bool per `pass` target, named after the file's stem, recording whether it exists.
 
 - `array.h` / `array.cpp` — arrays.

@@ -1,0 +1,55 @@
+n = 8;
+j = 0;
+i = 0;
+swapped = false;
+last = n - 2;
+end_slot = n - 1;
+
+arr[8] = {42,7,19,3,25,1,88,12};
+shout("Before: ");
+for (".print.bp") {
+  shout(arr[j]);
+  shout(" ");
+  j = j + 1;
+  if (j > end_slot) {
+    end();
+  }
+}
+break();
+
+
+j = 0;
+for(".sort.bp") {
+  if (arr[i] > arr[i + 1]) {
+    temp = arr[i];
+    arr[i] = arr[i + 1];
+    arr[i + 1] = temp;
+    swapped = true;
+  }
+
+  i = i + 1;
+
+  if (i > last) {
+    if (swapped == false) {
+      end();
+    }
+  
+    i = 0;
+    swapped = false;
+  }
+}
+
+
+j = 0;
+shout("After:  ");
+for (".print.bp") {
+  shout(arr[j]);
+  shout(" ");
+  j = j + 1;
+  if (j > end_slot) {
+    end();
+  }
+}
+break();
+
+end();

@@ -7,10 +7,12 @@ using namespace std;
 #include <vector>
 #include <variant>
 #include <optional>
+#include <fstream>
 #include <iostream>
 #include <filesystem>
 #include <type_traits>
 #include "../include/trim.h"
+#include "../include/has_extension.h"
 #include "../include/split.h"
 #include "../include/array.h"
 #include "../include/assign.h"
@@ -25,12 +27,33 @@ using namespace std;
 #include "../include/libraries/random.h"
 #include "../include/libraries/shell_utilities.h"
 
+//  Where a `for` body is written before being run, when the loop was not given
+//  a name of its own. Left visible: it is a real file you can open and edit
+//  while the loop runs, which is hard to discover if it is hidden.
+static const string for_file = "for.bp";
+
+//  A loop body is named after the file it was written in, so a loop nested
+//  inside another cannot overwrite the body its parent is still re-reading:
+//  a for in main.bp writes main.for.bp, and a for inside that body writes
+//  main.for.for.bp. Deriving it from the filename keeps it deterministic —
+//  nothing has to be looked up or kept in step.
+static string for_file_for(const string& filename) {
+  const string stem = filesystem::path(filename).stem().string();
+  return stem.empty() ? for_file : stem + "." + for_file;
+}
+
 //  Two spellings of one path ("x.bp", "./x.bp") must compare equal or a cycle
 //  slips through and recurses until the stack runs out.
 static string canonical_path(const string& path) {
   error_code error;
   const filesystem::path resolved = filesystem::weakly_canonical(path, error);
-  return error ? path : resolved.string();
+  if (!error) return resolved.string();
+
+  //  weakly_canonical can fail on a path that does not exist yet, and falling
+  //  back to the raw text would make the same file compare unequal depending
+  //  on whether it had been written at the time. Absolute is enough to match.
+  const filesystem::path absolute = filesystem::absolute(path, error);
+  return error ? path : absolute.lexically_normal().string();
 }
 
 //  True for a lone '=' outside a string. '==', '!=', '<=' and '>=' are
@@ -311,14 +334,13 @@ static size_t matching_close(const vector<string>& statements, size_t start) {
 
 void instruction_loop(bool &flag, const string& filename, const vector<string>& statements,
                       map<string, Variable>& variables, bool verbose,
-                      set<string>& active) {
+                      set<string>& active, set<string>& created,
+                      set<string> enabled) {
   const string delimiters = "();";
   const string self = canonical_path(filename);
   active.insert(self);
 
   scan_libraries(statements, variables, verbose);
-
-  set<string> enabled;  //  Libraries this file declared with `use`.
 
   bool stop = false;
   for (size_t i = 0; i < statements.size() && !stop; i++) {
@@ -367,6 +389,52 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
 
         if (!ok) cerr << "Bad condition: " << condition << endl;
         if (!ok || !met) i = matching_close(statements, i);
+      } else if (keyword == "for") {
+        const size_t close = matching_close(statements, i);
+
+        //  for("name") writes the body there instead of the default, so two
+        //  loops in one program can be told apart while they run.
+        const string chosen = between(between_matching(header, '(', ')'), '"', '"');
+        const string body_path = chosen.empty() ? for_file_for(filename)
+          : (has_extension(chosen, ".bp") ? chosen : chosen + ".bp");
+
+        created.insert(canonical_path(body_path));
+
+        {  //  The body is copied out to a file of its own and then run the
+           //  same way `pass` runs one.
+          ofstream body_file(body_path);
+          for (size_t j = i + 1; j < close && j < statements.size(); j++)
+            body_file << statements[j] << endl;
+        }
+
+        //  Its own flag, so `end` inside the body ends the loop rather than
+        //  the file the loop is written in. The body is re-read every turn,
+        //  so editing the hidden file changes the loop while it runs, and a
+        //  file caught half-written recovers on the next turn.
+        bool body_flag = false;
+        vector<string> reported;
+
+        while (!body_flag) {
+          vector<string> body;
+          vector<string> errors;
+          int body_statements = 0;
+          int body_semicolons = 0;
+
+          if (!validate_and_count(body_path, body, body_statements,
+              body_semicolons, errors)) {
+            if (errors != reported) {
+              for (const string& error : errors) cerr << error << endl;
+              reported = errors;
+            }
+            continue;
+          }
+          reported.clear();
+
+          instruction_loop(body_flag, body_path, body, variables, verbose, active, created,
+            enabled);
+        }
+
+        i = close;
       } else if (!header.empty()) {
         cerr << "Unknown block: " << keyword << endl;
         i = matching_close(statements, i);
@@ -480,44 +548,35 @@ void instruction_loop(bool &flag, const string& filename, const vector<string>& 
       } else if (name == "pass") {
         const string target = between(arg, '"', '"');
 
-        if (active.count(canonical_path(target))) {
-          cerr << "Cyclic use: " << target << endl;
-        } else {
-          vector<string> target_statements;
-          vector<string> errors;
-          vector<string> reported;  //  Errors already on screen, so no spam.
-          int target_count = 0;
-          int target_semicolons = 0;
+        vector<string> target_statements;
+        vector<string> errors;
+        vector<string> reported;  //  Errors already on screen, so no spam.
+        int target_count = 0;
+        int target_semicolons = 0;
 
-          //  The file repeats until its own `end` fires. That flag is private,
-          //  so ending the repeat cannot stop this file too. It is re-read
-          //  every time round, so an edit lands mid-loop and a file caught
-          //  half-written recovers on the next turn instead of trapping us.
-          bool target_flag = false;
-          while (!target_flag) {
-            if (!validate_and_count(target, target_statements, target_count,
-                target_semicolons, errors)) {
-              if (errors != reported) {
-                for (const string& error : errors) cerr << error << endl;
+        //  The file repeats until its own `end` fires. That flag is private,
+        //  so ending the repeat cannot stop this file too. It is re-read
+        //  every time round, so an edit lands mid-loop and a file caught
+        //  half-written recovers on the next turn instead of trapping us.
+        bool target_flag = false;
+        while (!target_flag) {
+          if (!validate_and_count(target, target_statements, target_count,
+              target_semicolons, errors)) {
+            if (errors != reported) {
+              for (const string& error : errors) cerr << error << endl;
                 reported = errors;
-              }
-              continue;
             }
-            reported.clear();
-
-            instruction_loop(target_flag, target, target_statements, variables,
-              verbose, active);
+            continue;
           }
+          reported.clear();
+
+          instruction_loop(target_flag, target, target_statements, variables,
+            verbose, active, created
+          );
         }
       }
-      
-
-      else {
-        cerr << "Unknown function: " << name << endl;
-      }
+      else {cerr << "Unknown function: " << name << endl;}
     }
-
   }
-
   active.erase(self);
 }

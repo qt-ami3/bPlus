@@ -37,7 +37,7 @@ bool tokenize(const std::string& expr, std::vector<Token>& out) {
       out.push_back({Token::Name, expr.substr(start, i - start), 0});
       continue;
     }
-    if (c == '+' || c == '-' || c == '*' || c == '/') {
+    if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%') {
       out.push_back({Token::Op, "", c});
       i++; continue;
     }
@@ -79,15 +79,21 @@ struct Parser {
     Value left = parse_atom();
     while (ok) {
       const Token* t = peek();
-      if (!t || t->kind != Token::Op || (t->op != '*' && t->op != '/')) break;
+      if (!t || t->kind != Token::Op
+        || (t->op != '*' && t->op != '/' && t->op != '%')) break;
       char op = t->op; pos++;
       Value right = parse_atom();
       if (!ok) break;
       if (op == '*') {
         left.v *= right.v;
-      } else {
+      } else if (op == '/') {
         if (right.v == 0) { std::cerr << "Division by zero\n"; ok = false; break; }
         left.v /= right.v;
+      } else {
+        //  fmod rather than %, since operands are carried as double. Whole
+        //  operands still give a whole answer, so 7 % 2 comes back as int.
+        if (right.v == 0) { std::cerr << "Division by zero\n"; ok = false; break; }
+        left.v = std::fmod(left.v, right.v);
       }
       left.is_float = left.is_float || right.is_float;
     }
@@ -220,5 +226,13 @@ std::optional<VarValue> eval_expr(const std::string& expr,
     && result.v <= static_cast<double>(std::numeric_limits<int>::max())) {
     return VarValue(static_cast<int>(result.v));
   }
-  return VarValue(static_cast<long long>(result.v));
+
+  //  Past what a long long can hold the cast would be undefined and wrap to a
+  //  negative, so the result stays a float instead. (double)LLONG_MAX rounds
+  //  up to 2^63, hence the strict <.
+  if (result.v >= static_cast<double>(std::numeric_limits<long long>::min())
+    && result.v < std::ldexp(1.0, 63)) {
+    return VarValue(static_cast<long long>(result.v));
+  }
+  return VarValue(result.v);
 }

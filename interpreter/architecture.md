@@ -92,7 +92,7 @@ static const map<string, set<string>> libraries = {
 };
 ```
 
-`use "library"` — no parentheses, no semicolon — inserts a name into a `set<string> enabled` local to `instruction_loop`. `providing_library(name)` finds the owner of an instruction, and the dispatch arm refuses it unless the file declared it, reporting `clear needs: use "shell_utilities"`. Being local to the call means the declaration does **not** cross a `pass`; each file declares for itself.
+`use "library"` — no parentheses, no semicolon — inserts a name into a `set<string> enabled` that `instruction_loop` takes as a parameter, defaulting to empty. `providing_library(name)` finds the owner of an instruction, and the dispatch arm refuses it unless the file declared it, reporting `clear needs: use "shell_utilities"`. The declaration does **not** cross a `pass` — that call passes nothing, so each file declares for itself. A `for` body is the same program, so its call passes the caller's set down and the body inherits the file's declarations.
 
 Nothing is loaded at runtime — the C++ is already linked in. `use` decides what a program is allowed to call. Adding an instruction is a name in the registry set plus an arm in the dispatch; the refusal message comes free.
 

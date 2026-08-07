@@ -1,0 +1,16 @@
+use "random"
+
+randomint(w, 1, 10);
+randomdouble(x, 0.1, 9.9);
+randombool(y);
+doublebellcurve(z, 1, 50);
+
+shout("Random int: ", w);
+break();
+shout("Random double: ", x);
+break();
+shout("Random bool:", y);
+break();
+shout("Double as a bell curve: ", z);
+
+end();
